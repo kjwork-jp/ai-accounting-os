@@ -11,3 +11,4 @@ coverage/
 *.log
 .turbo/
 .cache/
+*.tsbuildinfo
