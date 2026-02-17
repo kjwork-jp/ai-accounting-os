@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Loader2, Shield } from 'lucide-react';
 
 export default function LoginPage() {
   return (
@@ -14,35 +16,90 @@ export default function LoginPage() {
   );
 }
 
+type LoginStep = 'credentials' | 'mfa';
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') ?? '/';
 
+  const [step, setStep] = useState<LoginStep>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState('');
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (signInError) {
-      setError(signInError.message);
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+
+      // Check if MFA is required
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totpFactor = factors?.totp?.find(f => f.status === 'verified');
+        if (totpFactor) {
+          setMfaFactorId(totpFactor.id);
+          setStep('mfa');
+          return;
+        }
+      }
+
+      router.push(redirect);
+      router.refresh();
+    } finally {
       setLoading(false);
-      return;
     }
+  }
 
-    router.push(redirect);
-    router.refresh();
+  async function handleMfaVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const supabase = createClient();
+
+      const { data: challenge, error: challengeError } =
+        await supabase.auth.mfa.challenge({ factorId: mfaFactorId });
+
+      if (challengeError || !challenge) {
+        setError(challengeError?.message ?? 'MFAチャレンジの作成に失敗しました');
+        return;
+      }
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challenge.id,
+        code: totpCode,
+      });
+
+      if (verifyError) {
+        setError('認証コードが正しくありません。もう一度お試しください。');
+        setTotpCode('');
+        return;
+      }
+
+      router.push(redirect);
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleGoogleLogin() {
@@ -53,6 +110,65 @@ function LoginForm() {
         redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirect)}`,
       },
     });
+  }
+
+  if (step === 'mfa') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="w-full max-w-md space-y-6 rounded-lg bg-white p-8 shadow">
+          <div className="text-center">
+            <Shield className="mx-auto h-12 w-12 text-blue-600" />
+            <h1 className="mt-4 text-2xl font-bold text-gray-900">
+              二要素認証
+            </h1>
+            <p className="mt-2 text-sm text-gray-600">
+              認証アプリに表示された6桁のコードを入力してください
+            </p>
+          </div>
+
+          <form onSubmit={handleMfaVerify} className="space-y-4">
+            {error && (
+              <div className="rounded bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <Input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              placeholder="000000"
+              value={totpCode}
+              onChange={e => setTotpCode(e.target.value.replace(/\D/g, ''))}
+              className="text-center text-2xl tracking-[0.5em] h-14"
+              autoFocus
+            />
+
+            <Button
+              type="submit"
+              disabled={loading || totpCode.length !== 6}
+              className="w-full"
+            >
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              認証
+            </Button>
+          </form>
+
+          <button
+            type="button"
+            className="w-full text-center text-sm text-gray-500 hover:text-gray-700"
+            onClick={() => {
+              setStep('credentials');
+              setTotpCode('');
+              setError('');
+            }}
+          >
+            ログイン画面に戻る
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -104,7 +220,14 @@ function LoginForm() {
           </div>
 
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? 'ログイン中...' : 'ログイン'}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ログイン中...
+              </>
+            ) : (
+              'ログイン'
+            )}
           </Button>
         </form>
 
