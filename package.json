@@ -44,5 +44,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
