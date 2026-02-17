@@ -1,5 +1,9 @@
 {
-	"dependencies": {
-		"ioredis": "^5.9.3"
-	}
+  "name": "ai-accounting-os",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.5",
+  "dependencies": {
+    "ioredis": "^5.9.3"
+  }
 }
