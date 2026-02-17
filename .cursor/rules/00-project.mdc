@@ -1,3 +1,363 @@
 ---
 alwaysApply: true
 ---
+
+# AI Business Accounting OS - Cursor Project Rules
+
+## Project Overview
+
+AI業務代替型 会計中核プラットフォーム（インボイス制度完全対応）。
+中小零細企業（10〜50名規模）向けに、会計・受発注・決裁・経営分析をAIで代替する業務基盤ソフトウェア。
+
+### 4つの主要機能領域
+
+1. **会計処理（AI自動会計）** - 証憑起点の仕訳自動生成、インボイス帳簿要件の自動充足
+2. **受注・発注処理** - 適格請求書の発行・受領・保存、売上/仕入の会計自動連動
+3. **決裁（承認ワークフロー）** - 支払・経費・立替の承認管理、AI事前審査
+4. **経営分析（管理会計）** - 財務会計データの管理会計化、AI要因分析・予測
+
+---
+
+## Architecture
+
+モジュラーモノリス + 非同期AIワーカー構成。6層で構成される。
+
+```
+[Frontend] Next.js 14+ App Router (Vercel)
+[API/BFF]  Next.js Route Handlers - REST /api/v1/* (Vercel)
+[Queue]    BullMQ + Azure Cache for Redis (heavy/light queues)
+[Worker]   Node.js Worker on Azure Container Apps Jobs
+[DB]       Supabase PostgreSQL 15+ (RLS + 25 tables)
+[Storage]  Supabase Storage (S3 compatible)
+```
+
+### Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14+ (App Router, TypeScript), shadcn/ui + Tailwind CSS, Recharts |
+| API | Next.js Route Handlers (REST), OpenAPI, Zod validation |
+| Auth | Supabase Auth (Email + TOTP MFA + Google OAuth) |
+| DB | Supabase PostgreSQL with RLS |
+| Storage | Supabase Storage (documents / exports buckets) |
+| Queue | BullMQ + Azure Cache for Redis |
+| Worker | Node.js TypeScript on Azure Container Apps Jobs |
+| OCR | Azure AI Document Intelligence v4.0 |
+| LLM | Claude API (Sonnet) - JSON schema output |
+| Test | Vitest + Playwright |
+| CI/CD | GitHub Actions + Vercel + Azure Container Apps |
+| PDF | @react-pdf/renderer |
+
+---
+
+## Directory Structure
+
+```
+src/
+  app/                    # Next.js App Router pages
+    api/v1/               # REST API routes
+    (auth)/               # Auth pages (login, signup)
+    (dashboard)/          # Protected dashboard pages
+  components/
+    ui/                   # shadcn/ui components
+  lib/
+    supabase/
+      client.ts           # Browser Supabase client
+      server.ts           # Server Supabase client (cookies)
+    queue/                # BullMQ queue definitions
+    di/                   # Azure Document Intelligence client
+    llm/                  # Claude API client
+    auth/                 # Auth helpers
+  types/                  # Shared TypeScript types
+  hooks/                  # React hooks
+  utils/                  # Utility functions
+worker/                   # BullMQ consumer (ACA Jobs)
+supabase/
+  migrations/             # DDL migrations
+```
+
+---
+
+## Coding Standards
+
+### TypeScript
+
+- **strict mode** を必ず有効にする
+- 全API入力は **Zod** でバリデーション
+- `any` の使用は禁止。やむを得ない場合は `unknown` + type guard
+- 全APIルートは `/api/v1/` 配下に配置
+- 型定義は `src/types/` に集約
+
+### Naming Conventions
+
+- ファイル名: `kebab-case` (例: `journal-drafts.ts`)
+- コンポーネント: `PascalCase` (例: `JournalDraftList.tsx`)
+- 変数・関数: `camelCase`
+- DB関連の型/変数はスネークケースのDBカラム名をそのまま使用可（Supabase型生成に合わせる）
+- 定数: `UPPER_SNAKE_CASE`
+
+### Import Order
+
+1. React / Next.js
+2. External libraries
+3. `@/lib/*`
+4. `@/components/*`
+5. `@/hooks/*`, `@/utils/*`, `@/types/*`
+6. Relative imports
+
+---
+
+## Database Rules
+
+### Core Principles
+
+- **25テーブル** (4マスタ + 21業務)、**252カラム**
+- 全業務テーブルに `tenant_id` を持たせ、**RLS で tenant_users を参照してテナント分離**
+- 主キーは `uuid` (`gen_random_uuid()`)。外部連携用の自然キー(order_no等)は別カラム
+- 命名規約: `snake_case` 統一。マスタは `m_` prefix。明細は `_lines` suffix
+- `created_at` / `updated_at` は `timestamptz`。`updated_at` は moddatetime トリガーで自動更新
+- AI出力は **JSONB** で保存 (document_extractions, journal_drafts, invoice_checks)
+- 会計/証憑/監査データは原則 soft delete (確定後の直接変更不可、訂正仕訳で対応)
+
+### Table Groups
+
+**マスタ (m_):**
+- `m_document_types` - 証憑種別 (invoice/receipt/quotation/contract/bank_statement/credit_card/other)
+- `m_tax_codes` - 税区分 (TAX10/TAX8/NONTAX/EXEMPT)
+- `m_accounts` - 勘定科目 (tenant別、asset/liability/equity/revenue/expense)
+- `m_approval_types` - 決裁種別 (payment/expense/reimbursement/partner_change)
+
+**認証・テナント:**
+- `tenants` - テナント(企業)マスタ
+- `tenant_users` - テナント所属ユーザー (PK: tenant_id + user_id, role: admin/accounting/viewer)
+- `tenant_settings` - テナント設定 (auto_confirm_high=0.90, auto_confirm_mid=0.70)
+- `profiles` - ユーザープロファイル
+
+**会計コア (証憑→仕訳):**
+- `documents` - 証憑メタデータ (status: uploaded/processing/extracted/verified/error)
+- `document_extractions` - AI抽出結果 (JSONB + confidence + model info)
+- `invoice_checks` - インボイスチェック結果 (ok/needs_review/ng)
+- `journal_drafts` - 仕訳候補Top3 (candidates_json JSONB, selected_index, confidence)
+- `journal_entries` - 確定仕訳ヘッダ (status: draft/confirmed/reversed)
+- `journal_lines` - 確定仕訳明細 (debit/credit, account_code → m_accounts, tax_code → m_tax_codes)
+
+**受発注・請求:**
+- `orders` / `order_lines` - 受注/発注 (order_type: sales/purchase)
+- `invoices` / `invoice_lines` - 請求書 (invoice_type: sales/purchase, 適格請求書要件)
+- `partners` - 取引先マスタ (registration_number = 適格請求書発行事業者登録番号)
+
+**消込・決裁・監査:**
+- `payments` - 支払/入金明細 (bank/credit_card/cash, direction: in/out)
+- `reconciliations` - 消込リンク (payments ↔ invoices/journal_entries)
+- `approvals` / `approval_actions` - 決裁ワークフロー (risk_score 0-100, route_json)
+- `audit_logs` - 監査ログ (**INSERT only, UPDATE/DELETE 不可**, diff_json, request_id)
+- `feedback_events` - ユーザー修正履歴 (AI学習素材)
+
+### RLS Policy Pattern
+
+全業務テーブルで共通の `is_tenant_member` 関数を使用:
+
+```sql
+-- SELECT: public.is_tenant_member(tenant_id)
+-- INSERT: WITH CHECK public.is_tenant_member(new.tenant_id)
+-- UPDATE: USING + WITH CHECK
+-- audit_logs: SELECT のみ許可。INSERT は RPC (security definer) or service_role
+```
+
+---
+
+## API Design
+
+### Endpoints (44 total)
+
+全APIは `/api/v1/` 配下。認可は RLS + アプリ側 RBAC で二重化。
+
+**主要パターン:**
+- `GET /api/v1/{resource}` - 一覧 (query params for filtering/paging)
+- `POST /api/v1/{resource}` - 作成
+- `PATCH /api/v1/{resource}/{id}` - 更新
+- `POST /api/v1/{resource}/{id}/{action}` - アクション (confirm, approve, merge, etc.)
+
+**主要ドメイン:**
+- `/api/v1/me`, `/api/v1/auth/*` - 認証
+- `/api/v1/tenants/*` - テナント設定
+- `/api/v1/users/*` - ユーザー管理 (admin only)
+- `/api/v1/partners/*` - 取引先 CRUD + 名寄せ merge
+- `/api/v1/accounts/*` - 勘定科目マスタ
+- `/api/v1/documents/*` - 証憑アップロード/検索/OCR enqueue
+- `/api/v1/journals/*` - 仕訳候補確認/確定/一覧/エクスポート
+- `/api/v1/orders/*` - 受注/発注
+- `/api/v1/invoices/*` - 請求書作成/一覧/支払マーク
+- `/api/v1/payments/*` - 銀行CSV/クレカCSV取込
+- `/api/v1/reconciliations/*` - 消込候補/確定
+- `/api/v1/approvals/*` - 決裁申請/承認/差戻し
+- `/api/v1/audit-logs` - 監査ログ検索 (4キー: 期間/操作者/種別/対象)
+- `/api/v1/reports/*` - 月次PL/レポート生成/キャッシュフロー
+
+### API Standards
+
+- エラーレスポンス: `{ "error": { "code": "VALIDATION_ERROR|UNAUTHORIZED|FORBIDDEN|NOT_FOUND|CONFLICT", "message": "...", "details": [...] } }`
+- 冪等性: `Idempotency-Key` ヘッダ (documents/upload, journals/confirm)
+- 排他制御: 同一 document_id の同時 enqueue 禁止 (DB lock or BullMQ jobId)
+- 監査ログ: 重要操作 (create/confirm/approve/return/delete) は全て audit_logs に記録
+
+---
+
+## Async Job Design (BullMQ)
+
+Web(API) は enqueue のみ。実処理は Worker で実行。
+
+| Job | Queue | Trigger | Timeout | Retry | JobId Pattern |
+|---|---|---|---|---|---|
+| `document_parse` | heavy | upload/manual | 240s | 5, exp backoff | `doc_parse:{documentId}` |
+| `invoice_validate` | light | after parse | 30s | 3 | `invoice_validate:{documentId}` |
+| `journal_suggest` | light | after validate | 60s | 3 | `journal_suggest:{documentId}` |
+| `match_bank_statement` | light | CSV import | 60s | 3 | `match:{batchId}:{chunk}` |
+| `approval_risk_score` | light | approval create | 10s | 3 | `risk:{approvalId}` |
+| `report_generate` | heavy | on-demand/schedule | 300s | 3 | `report:{tenantId}:{period}` |
+
+### Azure DI Rate Limits
+
+- POST = 15 TPS (BullMQ limiter で制御)
+- 結果ポーリング >= 2秒間隔
+- `retry-after` ヘッダを尊重
+- 429 は指数バックオフ
+- 失敗は DLQ へ退避 + UI 再実行ボタン
+
+---
+
+## AI Integration
+
+### Claude API (仕訳生成・分類・要約)
+
+- 出力形式: **JSON schema** を強制 (Top3候補 + 信頼度 + 理由)
+- 信頼度閾値 (tenant_settings で変更可):
+  - `>= 0.90` → 自動確定候補
+  - `0.70 - 0.89` → 要確認トレイ
+  - `< 0.70` → 保留 (不足情報入力要求)
+- 修正履歴は `feedback_events` に蓄積 (テナント単位学習素材)
+- プロンプト/レスポンスは `journal_drafts.candidates_json` に全保存
+- コスト上限: `tenant_settings.ai_daily_cost_limit_jpy`
+
+### Azure Document Intelligence (OCR)
+
+- 非同期分析 (POST → Operation-Location → ポーリング)
+- ファイル上限: 10MB (超過はエラー誘導)
+- 対応形式: PDF, JPG, PNG
+- 抽出結果: `document_extractions.extracted_json` (JSONB)
+
+---
+
+## Security Rules
+
+- **テナント分離**: 全テーブルに `tenant_id` + RLS で強制 (CMN-001)
+- **service_role key**: Worker のみ保持。**絶対にクライアントコードに含めない**
+- **通信暗号化**: 全通信 TLS (Vercel/Supabase/Azure マネージド)
+- **保管時暗号化**: Supabase Storage 暗号化
+- **証憑改ざん検知**: SHA-256 ハッシュを `documents.file_hash_sha256` に保存 (CMN-009)
+- **監査ログ**: INSERT のみ (UPDATE/DELETE 不可)。重要操作は全て記録
+- **認証**: OIDC 準拠 (Supabase Auth)。MFA (TOTP) + Google OAuth
+- **RBAC**: 3ロール (admin / accounting / viewer)。営業/承認者は Phase2
+- **証憑保持**: 電子帳簿保存法に準じ最低7年保持。バケットポリシーで DELETE 禁止
+
+---
+
+## Invoice System (インボイス制度)
+
+### 適格請求書の必須項目
+
+1. 発行事業者名称
+2. 登録番号 (T + 13桁)
+3. 取引年月日
+4. 取引内容
+5. 税率別対価の額
+6. 消費税額
+7. 受領者名称
+
+### 帳簿記載要件 (仕入税額控除)
+
+取引先名称 / 取引年月日 / 取引内容 / 軽減税率区分 / 対価の額 / 税率 / 消費税額
+
+### 税区分
+
+- `TAX10` - 課税10%
+- `TAX8` - 課税8% (軽減税率)
+- `NONTAX` - 非課税
+- `EXEMPT` - 免税
+
+---
+
+## Testing Strategy
+
+- **Unit**: Vitest + Testing Library (API・ビジネスロジック)
+- **E2E**: Playwright (主要業務フロー)
+- **AI精度**: 仕訳精度/分類精度検証
+- **4-point check** (毎回必ず実行):
+  1. `pnpm lint`
+  2. `pnpm tsc --noEmit`
+  3. `pnpm test`
+  4. `pnpm build`
+
+---
+
+## Development Workflow
+
+### Branch Strategy
+
+- `main` - 本番デプロイ対象
+- `feature/<ticket-id>` - 機能開発ブランチ
+- PR → CI (lint/typecheck/test/build) → Review → Merge
+
+### Commit Convention
+
+Conventional Commits に従う:
+- `feat:` - 新機能
+- `fix:` - バグ修正
+- `refactor:` - リファクタリング
+- `test:` - テスト追加/修正
+- `chore:` - 設定/ツール/CI
+- `docs:` - ドキュメント
+
+### AI-Assisted Development Flow (Recurring Ops)
+
+1. チケット内容から **計画のみ** を先に作成 (コード変更禁止)
+2. 計画レビュー後に実装
+3. 実装後は必ず 4-point check を実行
+4. `git diff --stat` で差分レビュー
+5. コミット & push → PR
+
+---
+
+## Phase2 Deferred Items (MVP Scope外)
+
+以下は MVP では実装しない (逸脱承認済み D-1〜D-14):
+
+- D-1: メール転送による証憑取込
+- D-2: AI列推定 (既存会計CSV)
+- D-3: SAML SSO
+- D-4: 営業/承認者ロール (5→3ロール)
+- D-5: ML再訓練による自己学習 (ルールベース簡易版で代替)
+- D-7: 金額差異検知 (証憑 vs 明細)
+- D-8: 請求書自動補完/支払条件推定
+- D-9: 部分入金/過入金処理
+- D-10: 発注自動復元
+- D-11: 頻度異常検知
+- D-12: 資金繰り予測/銀行明細参照
+- D-13: AI改善提案/簡易予測
+- D-14: CSV取込ウィザード/AI科目マッピング
+
+---
+
+## Key Reference Documents
+
+設計判断に迷った場合は以下を参照:
+
+- **要件定義書** - 機能要件 102件の詳細
+- **WBS (V8)** - タスク・Sprint計画・必須要件トレーサビリティ
+- **DB設計書** - テーブル定義/RLS/DDL/Seed/インデックス
+- **技術設計書** - API一覧(44)/画面遷移(10)/ジョブ設計/モック資産分析
+- **アーキテクチャ図5種** - Mermaid記法の構成図/ER図/シーケンス図
+- **メイン統一手順書** - Step-by-step構築手順
+- **コピペ用テンプレート集** - Artifact一覧 (A-COD-*, A-DB-* 等)
+
+全ドキュメントは `Claude_Code_Document/` ディレクトリに格納。
