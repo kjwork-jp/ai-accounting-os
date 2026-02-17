@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return NextResponse.next();
   }
-  if (API_PUBLIC_PATHS.some(p => pathname === p)) {
+  if (API_PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
