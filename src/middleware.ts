@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 
 // Public paths that don't require authentication
 const PUBLIC_PATHS = ['/login', '/signup', '/auth/callback'];
-const API_PUBLIC_PATHS = ['/api/v1/health'];
+const API_PUBLIC_PATHS = ['/api/v1/health', '/api/v1/auth/signup'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
