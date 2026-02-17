@@ -8,11 +8,8 @@ const signupSchema = z.object({
   full_name: z.string().min(1),
 });
 
-/**
- * Server-side signup using Admin API.
- * Creates user with email auto-confirmed (no verification email needed).
- * Also creates a profile and tenant_users entry for the dev tenant.
- */
+const DEV_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const parsed = signupSchema.safeParse(body);
@@ -39,7 +36,7 @@ export async function POST(request: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // Create user with email auto-confirmed
+  // 1. Create user with email auto-confirmed (no verification email)
   const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
@@ -48,7 +45,6 @@ export async function POST(request: NextRequest) {
   });
 
   if (createError) {
-    // Handle duplicate user
     if (createError.message.includes('already') || createError.message.includes('exists')) {
       return NextResponse.json(
         { error: { code: 'CONFLICT', message: 'このメールアドレスは既に登録されています' } },
@@ -62,9 +58,10 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = userData.user.id;
+  const errors: string[] = [];
 
-  // Upsert profile
-  await supabaseAdmin
+  // 2. Create profile
+  const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .upsert({
       user_id: userId,
@@ -72,24 +69,33 @@ export async function POST(request: NextRequest) {
       full_name,
     }, { onConflict: 'user_id' });
 
-  // Find a tenant to assign (use the first active tenant for dev)
-  const { data: tenant } = await supabaseAdmin
-    .from('tenants')
-    .select('id')
-    .eq('status', 'active')
-    .limit(1)
-    .single();
+  if (profileError) {
+    errors.push(`profile: ${profileError.message}`);
+  }
 
-  if (tenant) {
-    // Create tenant_users entry (default role: viewer)
-    await supabaseAdmin
-      .from('tenant_users')
-      .upsert({
-        tenant_id: tenant.id,
-        user_id: userId,
-        role: 'admin',
-        is_active: true,
-      }, { onConflict: 'tenant_id,user_id' });
+  // 3. Assign to dev tenant
+  const { error: tenantUserError } = await supabaseAdmin
+    .from('tenant_users')
+    .upsert({
+      tenant_id: DEV_TENANT_ID,
+      user_id: userId,
+      role: 'admin',
+      is_active: true,
+    }, { onConflict: 'tenant_id,user_id' });
+
+  if (tenantUserError) {
+    errors.push(`tenant_users: ${tenantUserError.message}`);
+  }
+
+  if (errors.length > 0) {
+    return NextResponse.json(
+      {
+        message: 'ユーザーは作成されましたが、一部のセットアップに失敗しました。',
+        userId,
+        warnings: errors,
+      },
+      { status: 201 }
+    );
   }
 
   return NextResponse.json(

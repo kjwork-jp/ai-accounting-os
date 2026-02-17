@@ -15,17 +15,20 @@ export async function getCurrentTenantUser(): Promise<
 
   const { data: tenantUser } = await supabase
     .from('tenant_users')
-    .select('*, profiles:profiles!tenant_users_user_id_fkey(*)')
+    .select('*')
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .limit(1)
     .single();
 
   if (!tenantUser) return null;
 
-  // Supabase join returns profiles as object or array
-  const profile = Array.isArray(tenantUser.profiles)
-    ? tenantUser.profiles[0] ?? null
-    : tenantUser.profiles ?? null;
+  // Fetch profile separately to avoid FK join issues between tenant_users and profiles
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single();
 
   return {
     tenant_id: tenantUser.tenant_id,
@@ -34,7 +37,7 @@ export async function getCurrentTenantUser(): Promise<
     is_active: tenantUser.is_active,
     created_at: tenantUser.created_at,
     updated_at: tenantUser.updated_at,
-    profile: profile as Profile | null,
+    profile: (profile as Profile) ?? null,
   };
 }
 
