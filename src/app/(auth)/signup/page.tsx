@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -18,37 +20,40 @@ export default function SignupPage() {
     setError('');
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    try {
+      const res = await fetch('/api/v1/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, full_name: fullName }),
+      });
 
-    if (signUpError) {
-      setError(signUpError.message);
+      const json = await res.json();
+
+      if (!res.ok) {
+        setError(json.error?.message ?? 'アカウント作成に失敗しました');
+        return;
+      }
+
+      setSuccess(true);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setSuccess(true);
-    setLoading(false);
   }
 
   if (success) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="w-full max-w-md rounded-lg bg-white p-8 shadow text-center">
-          <h1 className="text-xl font-bold text-gray-900">確認メールを送信しました</h1>
+          <h1 className="text-xl font-bold text-green-700">アカウントを作成しました</h1>
           <p className="mt-4 text-sm text-gray-600">
-            {email} に確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。
+            メール認証は不要です。すぐにログインできます。
           </p>
-          <Link href="/login" className="mt-6 inline-block text-sm font-medium text-blue-600 hover:text-blue-500">
+          <Button
+            className="mt-6"
+            onClick={() => router.push('/login')}
+          >
             ログインページへ
-          </Link>
+          </Button>
         </div>
       </div>
     );
@@ -120,7 +125,14 @@ export default function SignupPage() {
           </div>
 
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? '登録中...' : 'アカウント登録'}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                登録中...
+              </>
+            ) : (
+              'アカウント登録'
+            )}
           </Button>
         </form>
 
