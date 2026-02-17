@@ -54,25 +54,25 @@ DB設計書 (DDL 532行 / RLS 89ポリシー / INDEX 17本)
 | 1.1.5 | モック資産分析 | 1h | **完了** | 技術設計書08 + サンプル手順 |
 | 1.1.6 | 同期処理安全柵仕様 | 1h | **完了** | 技術設計書07 |
 | **1.2 DB設計** |||||
-| 1.2.1 | スキーマ設計(DDL) | 3h | **完了(設計のみ)** | DB設計書03-05(DDL 532行)。ただしmigrationファイル未commit |
-| 1.2.2 | RLSポリシー | 1h | **完了(設計のみ)** | DB設計書04(89ポリシー)。Supabaseへ未適用 |
-| 1.2.3 | マスタデータ+Seed | 1h | **完了(設計+ファイル)** | DB設計書06-07 + `supabase/seed.sql`(110行) |
+| 1.2.1 | スキーマ設計(DDL) | 3h | **完了** | DB設計書03-05(DDL 532行)。Supabaseへ適用済み |
+| 1.2.2 | RLSポリシー | 1h | **完了** | DB設計書04(89ポリシー)。Supabaseへ適用済み |
+| 1.2.3 | マスタデータ+Seed | 1h | **完了** | DB設計書06-07 + `supabase/seed.sql`(110行)。投入済み |
 | **1.3 インフラ** |||||
-| 1.3.1 | Supabase構築 | 1h | **進行中** | メイン手順書Supabaseシート"In progress"。キー取得済み |
-| 1.3.2 | Azure DI+Redis設定 | 2h | **完了** | メイン手順書Azure_DI_Redisシート"Done"。キー取得済み |
-| 1.3.3 | CI/CD | 2h | **部分完了** | GitHub Actions ci.yml存在。Vercel連携済み。ACA/ACR構築は"Blocked" |
+| 1.3.1 | Supabase構築 | 1h | **完了** | Project/Auth/Storage/Extension設定完了 |
+| 1.3.2 | Azure DI+Redis設定 | 2h | **完了** | RG/DI/Redis作成+キー取得完了 |
+| 1.3.3 | CI/CD | 2h | **部分完了** | GitHub Actions CI + Vercel連携済み。ACA/ACRはS2延期 |
 
 ### 2.2 メイン統一手順書シート別ステータス
 
 | シート | ステータス | 詳細 |
 |--------|----------|------|
 | Prepare | **Done** | ツールインストール/SSH/リポジトリ構築完了 |
-| Supabase | **In progress** | Project作成/Auth/Storage設定途中 |
+| Supabase | **Done** | Project作成/Auth/Storage/Extension設定完了 |
 | Azure_DI_Redis | **Done** | RG/DI/Redis作成+キー取得完了 |
-| CI_CD | **Blocked** | Vercel連携済みだがACA/ACR構築がブロック中 |
-| Coding | **部分完了** | Next.js初期化/依存/ディレクトリ構造OK。設定ファイル一部未完 |
-| DB | **未着手** | DDL/RLS/トリガー/Seed/StorageRLSすべて未実行 |
-| Verify | **未着手** | 全チェック項目未実施 |
+| CI_CD | **Blocked** | Vercel連携済み。ACA/ACR構築はS2(Worker実装時)まで延期可 |
+| Coding | **Done** | Next.js初期化/依存/ディレクトリ構造/設定ファイル完了 |
+| DB | **Done** | DDL(25テーブル)/RLS(89ポリシー)/トリガー/Seed/INDEX/StorageRLS適用済み |
+| Verify | **Done** | インフラ疎通〜ビルド確認完了 |
 
 ### 2.3 リポジトリ内の実装状況
 
@@ -90,37 +90,18 @@ DB設計書 (DDL 532行 / RLS 89ポリシー / INDEX 17本)
 | **CI** | lint→typecheck→test→build | ci.yml 設定済み | **OK** |
 | **ドキュメント** | AGENTS.md | 134行、設計判断と規約を記載 | **OK** |
 
-### 2.4 重要なギャップ(S1着手前に解決すべき)
+### 2.4 残存ギャップ
 
-| # | ギャップ | 影響度 | 解決策 |
-|---|---------|--------|--------|
-| G-1 | **DB migrationファイルが未commit** | 高 | DB設計書05_DDLをmigrationファイルとしてcommit |
-| G-2 | **DB手順書(DB-001〜DB-012)が未実施** | 高 | Supabase SQL EditorでDDL/RLS/トリガー/Seedを実行 |
-| G-3 | **CI_CDシートがBlocked** | 中 | ACA/ACRはS2(Worker実装時)まで延期可。Vercelデプロイは動作中 |
-| G-4 | **Supabaseシートが未完了** | 中 | MFA設定/Storage bucket作成/Extension有効化を完了させる |
-| G-5 | **Verifyシートが未実施** | 中 | DB構築後にインフラ疎通〜ビルド確認を実施 |
+| # | ギャップ | 影響度 | 対応方針 |
+|---|---------|--------|---------|
+| G-1 | **CI_CD(ACA/ACR)がBlocked** | 低 | S2(Worker実装時)まで延期。Vercelデプロイは動作中 |
+| G-2 | **DB migrationファイルがリポジトリに未commit** | 中 | Supabase上には適用済み。リポジトリへのSQL格納はS1序盤で対応 |
+
+> **Note**: G-1はWorker実装のS2まで実質影響なし。G-2はSupabase上のDBは動作しているためS1開発を阻害しない。
 
 ---
 
 ## 3. S1以降の実施手順書
-
-### 3.0 S0残タスク(S1着手前に完了させる)
-
-> **目標**: DB構築完了 + 全インフラ疎通確認
-
-| Step | ID | タスク | 手順 | 確認方法 |
-|------|----|-------|------|---------|
-| 1 | S0-R1 | Supabase Extensions有効化 | SQL Editor: `CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS moddatetime;` | `SELECT * FROM pg_extension;` にpgcrypto/moddatetimeが存在 |
-| 2 | S0-R2 | DDL実行(25テーブル作成) | DB設計書05_DDL_PostgreSQLの完全SQLをSQL Editorで実行 | `SELECT count(*) FROM information_schema.tables WHERE table_schema='public';` → 25 |
-| 3 | S0-R3 | RLSポリシー適用 | DB設計書04_RLSポリシーのSQLを実行(is_tenant_member関数 + 89ポリシー) | `SELECT count(*) FROM pg_policies WHERE schemaname='public';` → 89前後 |
-| 4 | S0-R4 | moddatetimeトリガー作成 | メイン手順書DB-005のPL/pgSQL実行 | `SELECT trigger_name, event_object_table FROM information_schema.triggers WHERE trigger_name='set_updated_at';` |
-| 5 | S0-R5 | マスタデータ投入 | seed.sqlをSQL Editorで実行 | m_document_types:7件、m_tax_codes:4件、m_accounts:35件 |
-| 6 | S0-R6 | INDEXEs作成 | DB設計書10_性能・インデックスのCREATE INDEX SQL実行 | `SELECT indexname FROM pg_indexes WHERE schemaname='public';` |
-| 7 | S0-R7 | Storage RLS | メイン手順書DB-011のpolicy SQL実行 | `SELECT policyname FROM pg_policies WHERE tablename='objects';` |
-| 8 | S0-R8 | DB migrationファイルcommit | DDL/RLS/Trigger/Seed/IndexのSQLを`supabase/migrations/`配下にファイルとして格納 | ファイル存在 |
-| 9 | S0-R9 | Verify実行 | メイン手順書Verifyシート(VER-001〜VER-012)を順に実行 | 全項目パス |
-
----
 
 ### 3.1 Sprint S1: 共通基盤開発 (27h)
 
