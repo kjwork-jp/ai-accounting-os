@@ -20,15 +20,10 @@ interface AuditLogParams {
 export async function insertAuditLog(params: AuditLogParams): Promise<string | null> {
   const supabase = createAdminSupabase();
 
-  // Look up actor name from profiles
+  // Look up actor name from profiles (fallback: auth user email)
   let actorName: string | null = null;
   if (params.actorUserId) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, email')
-      .eq('user_id', params.actorUserId)
-      .single();
-    actorName = profile?.full_name || profile?.email || null;
+    actorName = await resolveUserDisplayName(supabase, params.actorUserId);
   }
 
   // Look up entity name if not provided
@@ -61,6 +56,28 @@ export async function insertAuditLog(params: AuditLogParams): Promise<string | n
   return data?.id ?? null;
 }
 
+async function resolveUserDisplayName(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  userId: string
+): Promise<string | null> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, email')
+    .eq('user_id', userId)
+    .single();
+
+  if (profile?.full_name || profile?.email) {
+    return profile.full_name || profile.email;
+  }
+
+  const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+  if (authUser?.user?.email) {
+    return authUser.user.email;
+  }
+
+  return null;
+}
+
 /**
  * Resolve a human-readable name for an entity based on type and ID.
  */
@@ -71,12 +88,7 @@ async function resolveEntityName(
 ): Promise<string | null> {
   switch (entityType) {
     case 'tenant_users': {
-      const { data } = await supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('user_id', entityId)
-        .single();
-      return data?.full_name || data?.email || null;
+      return resolveUserDisplayName(supabase, entityId);
     }
     case 'tenant_settings':
     case 'tenants': {
