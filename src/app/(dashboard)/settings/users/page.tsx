@@ -28,12 +28,19 @@ interface TenantUserRow {
   user_id: string;
   tenant_id: string;
   role: UserRole;
+  custom_role_id: string | null;
   is_active: boolean;
   created_at: string;
   profiles: {
     full_name: string | null;
     email: string | null;
   } | null;
+}
+
+interface CustomRoleOption {
+  id: string;
+  name: string;
+  base_role: UserRole;
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -52,8 +59,11 @@ const ROLE_COLORS: Record<UserRole, string> = {
   sales: 'bg-green-100 text-green-800',
 };
 
+const NO_CUSTOM_ROLE = '__none__';
+
 export default function UserManagementPage() {
   const [users, setUsers] = useState<TenantUserRow[]>([]);
+  const [customRoles, setCustomRoles] = useState<CustomRoleOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -62,30 +72,44 @@ export default function UserManagementPage() {
   const [createEmail, setCreateEmail] = useState('');
   const [createName, setCreateName] = useState('');
   const [createRole, setCreateRole] = useState<UserRole>('viewer');
+  const [createCustomRoleId, setCreateCustomRoleId] = useState<string>(NO_CUSTOM_ROLE);
   const [creating, setCreating] = useState(false);
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
   const [editUser, setEditUser] = useState<TenantUserRow | null>(null);
   const [editRole, setEditRole] = useState<UserRole>('viewer');
+  const [editCustomRoleId, setEditCustomRoleId] = useState<string>(NO_CUSTOM_ROLE);
   const [saving, setSaving] = useState(false);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/users');
-      const json = await res.json();
-      if (json.data) setUsers(json.data);
-      else if (json.error) setError(json.error.message ?? 'ユーザーの取得に失敗しました');
+      const [usersRes, rolesRes] = await Promise.all([
+        fetch('/api/v1/users'),
+        fetch('/api/v1/custom-roles'),
+      ]);
+      const usersJson = await usersRes.json();
+      const rolesJson = await rolesRes.json();
+
+      if (usersJson.data) setUsers(usersJson.data);
+      else if (usersJson.error) setError(usersJson.error.message ?? 'ユーザーの取得に失敗しました');
+
+      if (rolesJson.data) setCustomRoles(rolesJson.data);
     } catch {
-      setError('ユーザーの取得に失敗しました');
+      setError('データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    fetchData();
+  }, [fetchData]);
+
+  function getCustomRoleName(customRoleId: string | null): string | null {
+    if (!customRoleId) return null;
+    return customRoles.find(r => r.id === customRoleId)?.name ?? null;
+  }
 
   async function handleCreate() {
     setCreating(true);
@@ -98,6 +122,7 @@ export default function UserManagementPage() {
           email: createEmail,
           full_name: createName,
           role: createRole,
+          custom_role_id: createCustomRoleId === NO_CUSTOM_ROLE ? null : createCustomRoleId,
         }),
       });
       const json = await res.json();
@@ -109,7 +134,8 @@ export default function UserManagementPage() {
       setCreateEmail('');
       setCreateName('');
       setCreateRole('viewer');
-      fetchUsers();
+      setCreateCustomRoleId(NO_CUSTOM_ROLE);
+      fetchData();
     } finally {
       setCreating(false);
     }
@@ -123,7 +149,10 @@ export default function UserManagementPage() {
       const res = await fetch(`/api/v1/users/${editUser.user_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: editRole }),
+        body: JSON.stringify({
+          role: editRole,
+          custom_role_id: editCustomRoleId === NO_CUSTOM_ROLE ? null : editCustomRoleId,
+        }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -132,7 +161,7 @@ export default function UserManagementPage() {
       }
       setEditOpen(false);
       setEditUser(null);
-      fetchUsers();
+      fetchData();
     } finally {
       setSaving(false);
     }
@@ -141,17 +170,13 @@ export default function UserManagementPage() {
   async function handleToggleActive(user: TenantUserRow) {
     setError('');
     if (user.is_active) {
-      // Disable
-      const res = await fetch(`/api/v1/users/${user.user_id}/disable`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/v1/users/${user.user_id}/disable`, { method: 'POST' });
       if (!res.ok) {
         const json = await res.json();
         setError(json.error?.message ?? '無効化に失敗しました');
         return;
       }
     } else {
-      // Re-enable
       const res = await fetch(`/api/v1/users/${user.user_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -163,7 +188,7 @@ export default function UserManagementPage() {
         return;
       }
     }
-    fetchUsers();
+    fetchData();
   }
 
   const columns: Column<TenantUserRow>[] = [
@@ -186,11 +211,21 @@ export default function UserManagementPage() {
       key: 'role',
       label: 'ロール',
       sortable: true,
-      render: (row) => (
-        <Badge className={ROLE_COLORS[row.role]} variant="secondary">
-          {ROLE_LABELS[row.role]}
-        </Badge>
-      ),
+      render: (row) => {
+        const customRoleName = getCustomRoleName(row.custom_role_id);
+        return (
+          <div className="flex flex-col gap-1">
+            <Badge className={ROLE_COLORS[row.role]} variant="secondary">
+              {ROLE_LABELS[row.role]}
+            </Badge>
+            {customRoleName && (
+              <Badge variant="outline" className="text-xs">
+                {customRoleName}
+              </Badge>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'is_active',
@@ -223,6 +258,7 @@ export default function UserManagementPage() {
             onClick={() => {
               setEditUser(row);
               setEditRole(row.role);
+              setEditCustomRoleId(row.custom_role_id ?? NO_CUSTOM_ROLE);
               setEditOpen(true);
             }}
           >
@@ -294,7 +330,7 @@ export default function UserManagementPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>ロール</Label>
+              <Label>ベースロール</Label>
               <Select value={createRole} onValueChange={v => setCreateRole(v as UserRole)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -306,6 +342,22 @@ export default function UserManagementPage() {
                 </SelectContent>
               </Select>
             </div>
+            {customRoles.length > 0 && (
+              <div className="space-y-2">
+                <Label>カスタムロール（任意）</Label>
+                <Select value={createCustomRoleId} onValueChange={setCreateCustomRoleId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_CUSTOM_ROLE}>なし</SelectItem>
+                    {customRoles.map(cr => (
+                      <SelectItem key={cr.id} value={cr.id}>{cr.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
@@ -334,7 +386,7 @@ export default function UserManagementPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>ロール</Label>
+              <Label>ベースロール</Label>
               <Select value={editRole} onValueChange={v => setEditRole(v as UserRole)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -346,6 +398,22 @@ export default function UserManagementPage() {
                 </SelectContent>
               </Select>
             </div>
+            {customRoles.length > 0 && (
+              <div className="space-y-2">
+                <Label>カスタムロール（任意）</Label>
+                <Select value={editCustomRoleId} onValueChange={setEditCustomRoleId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_CUSTOM_ROLE}>なし</SelectItem>
+                    {customRoles.map(cr => (
+                      <SelectItem key={cr.id} value={cr.id}>{cr.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {editUser && (
               <div className="space-y-2">
                 <Label>アカウント状態</Label>
