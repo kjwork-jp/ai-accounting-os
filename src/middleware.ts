@@ -6,6 +6,10 @@ import type { NextRequest } from 'next/server';
 const PUBLIC_PATHS = ['/login', '/signup', '/auth/callback'];
 const API_PUBLIC_PATHS = ['/api/v1/health', '/api/v1/auth/signup'];
 
+// Paths that require authentication but NOT tenant membership
+const AUTH_ONLY_PATHS = ['/onboarding'];
+const API_AUTH_ONLY_PATHS = ['/api/v1/tenants'];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -61,7 +65,15 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (pathname === '/login' || pathname === '/signup') {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Auth-only paths (onboarding, tenant creation) — authenticated but no tenant check
+  if (AUTH_ONLY_PATHS.some(p => pathname.startsWith(p))) {
+    return response;
+  }
+  if (API_AUTH_ONLY_PATHS.some(p => pathname.startsWith(p))) {
+    return response;
   }
 
   return response;
@@ -69,12 +81,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico, icons, images
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

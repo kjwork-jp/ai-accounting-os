@@ -87,6 +87,19 @@ export interface TenantUser {
   tenant_id: string;
   user_id: string;
   role: UserRole;
+  custom_role_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantCustomRole {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description: string | null;
+  base_role: UserRole;
+  permissions: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

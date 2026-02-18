@@ -1,19 +1,22 @@
-import { createServerSupabase } from '@/lib/supabase/server';
-import type { UserRole, TenantUser, Profile } from '@/types/database';
+import { createServerSupabase, createAdminSupabase } from '@/lib/supabase/server';
+import type { UserRole, TenantUser, TenantCustomRole, Profile } from '@/types/database';
 
 /**
  * Get current user's tenant membership from server context.
  * Returns null if not authenticated or no active membership.
  */
 export async function getCurrentTenantUser(): Promise<
-  (TenantUser & { profile: Profile | null }) | null
+  (TenantUser & { profile: Profile | null; customRole: TenantCustomRole | null }) | null
 > {
   const supabase = await createServerSupabase();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: tenantUser } = await supabase
+  // Use admin client to avoid RLS issues
+  const admin = createAdminSupabase();
+
+  const { data: tenantUser } = await admin
     .from('tenant_users')
     .select('*')
     .eq('user_id', user.id)
@@ -23,31 +26,67 @@ export async function getCurrentTenantUser(): Promise<
 
   if (!tenantUser) return null;
 
-  // Fetch profile separately to avoid FK join issues between tenant_users and profiles
-  const { data: profile } = await supabase
+  // Fetch profile separately
+  const { data: profile } = await admin
     .from('profiles')
     .select('*')
     .eq('user_id', user.id)
     .single();
 
+  // Fetch custom role if assigned
+  let customRole: TenantCustomRole | null = null;
+  if (tenantUser.custom_role_id) {
+    const { data } = await admin
+      .from('tenant_custom_roles')
+      .select('*')
+      .eq('id', tenantUser.custom_role_id)
+      .single();
+    customRole = data as TenantCustomRole | null;
+  }
+
   return {
     tenant_id: tenantUser.tenant_id,
     user_id: tenantUser.user_id,
     role: tenantUser.role as UserRole,
+    custom_role_id: tenantUser.custom_role_id ?? null,
     is_active: tenantUser.is_active,
     created_at: tenantUser.created_at,
     updated_at: tenantUser.updated_at,
     profile: (profile as Profile) ?? null,
+    customRole,
   };
 }
 
 /**
- * RBAC: check if a role has access to a feature.
+ * All valid permission strings in the system.
+ */
+export const VALID_PERMISSIONS = [
+  'users:manage',
+  'tenant:settings',
+  'custom_roles:manage',
+  'documents:upload',
+  'documents:view',
+  'journals:confirm',
+  'journals:view',
+  'partners:manage',
+  'partners:view',
+  'orders:manage',
+  'invoices:manage',
+  'approvals:create',
+  'approvals:approve',
+  'approvals:view',
+  'reports:view',
+  'audit:view',
+];
+
+/**
+ * RBAC: base role permission mapping.
  * Role hierarchy: admin > accounting > approver ≈ sales > viewer
  */
 const ROLE_PERMISSIONS: Record<string, UserRole[]> = {
   'users:manage': ['admin'],
   'tenant:settings': ['admin'],
+  'custom_roles:manage': ['admin'],
   'documents:upload': ['admin', 'accounting'],
   'documents:view': ['admin', 'accounting', 'viewer'],
   'journals:confirm': ['admin', 'accounting'],
@@ -63,8 +102,21 @@ const ROLE_PERMISSIONS: Record<string, UserRole[]> = {
   'audit:view': ['admin', 'accounting'],
 };
 
-export function hasPermission(role: UserRole, permission: string): boolean {
+/**
+ * Check permission with custom role support.
+ * Effective permissions = base role permissions + custom role extra permissions.
+ */
+export function hasPermission(
+  role: UserRole,
+  permission: string,
+  customRole?: TenantCustomRole | null
+): boolean {
+  // Check base role
   const allowed = ROLE_PERMISSIONS[permission];
-  if (!allowed) return false;
-  return allowed.includes(role);
+  if (allowed && allowed.includes(role)) return true;
+
+  // Check custom role extra permissions
+  if (customRole?.permissions?.includes(permission)) return true;
+
+  return false;
 }

@@ -3,6 +3,7 @@ import Link from 'next/link';
 const TABS = [
   { label: 'セキュリティ', href: '/settings' },
   { label: 'ユーザー管理', href: '/settings/users' },
+  { label: 'カスタムロール', href: '/settings/roles' },
 ];
 
 export default function SettingsLayout({
