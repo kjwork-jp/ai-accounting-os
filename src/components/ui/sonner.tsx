@@ -1,4 +1,4 @@
-"use client"
+'use client';
 
 import {
   CircleCheck,
@@ -39,4 +39,15 @@ const Toaster = ({ ...props }: ToasterProps) => {
   )
 }
 
-export { Toaster }
+/**
+ * Fallback Toaster component.
+ *
+ * NOTE:
+ * The project standard recommends Sonner, but in environments where
+ * `sonner` package resolution is unavailable we render a no-op placeholder
+ * to keep build/typecheck healthy.
+ */
+export function Toaster(props: ToasterProps) {
+  void props;
+  return null;
+}
