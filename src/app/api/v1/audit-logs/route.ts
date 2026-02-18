@@ -13,6 +13,22 @@ const querySchema = z.object({
   offset: z.string().optional(),
 });
 
+type AuditLogRow = {
+  id: string;
+  tenant_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  entity_name: string | null;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  request_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  diff_json: Record<string, unknown>;
+  created_at: string;
+};
+
 export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
@@ -46,5 +62,61 @@ export async function GET(request: NextRequest) {
     return ok({ data: [], error: error.message });
   }
 
-  return ok({ data });
+  const rows = (data ?? []) as AuditLogRow[];
+  if (rows.length === 0) {
+    return ok({ data: rows });
+  }
+
+  // Fill missing actor/entity display names for both historical and new logs.
+  const userIdsToResolve = new Set<string>();
+  for (const row of rows) {
+    if (!row.actor_name && row.actor_user_id) {
+      userIdsToResolve.add(row.actor_user_id);
+    }
+    if (!row.entity_name && row.entity_type === 'tenant_users' && row.entity_id) {
+      userIdsToResolve.add(row.entity_id);
+    }
+  }
+
+  const resolvedNames = new Map<string, string>();
+  const ids = Array.from(userIdsToResolve);
+  if (ids.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, email')
+      .in('user_id', ids);
+
+    if (profiles) {
+      for (const p of profiles) {
+        const name = p.full_name || p.email;
+        if (name) resolvedNames.set(p.user_id, name);
+      }
+    }
+
+    // Fallback to Auth user email when profile is missing
+    for (const userId of ids) {
+      if (resolvedNames.has(userId)) continue;
+      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+      const email = authUser?.user?.email;
+      if (email) resolvedNames.set(userId, email);
+    }
+  }
+
+  const enriched = rows.map(row => {
+    const actorName = row.actor_name
+      ?? (row.actor_user_id ? resolvedNames.get(row.actor_user_id) ?? null : null);
+
+    const entityName = row.entity_name
+      ?? (row.entity_type === 'tenant_users' && row.entity_id
+        ? resolvedNames.get(row.entity_id) ?? null
+        : null);
+
+    return {
+      ...row,
+      actor_name: actorName,
+      entity_name: entityName,
+    };
+  });
+
+  return ok({ data: enriched });
 }
