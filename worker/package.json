@@ -1,0 +1,23 @@
+{
+  "name": "ai-accounting-os-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.96.0",
+    "bullmq": "^5.69.3",
+    "ioredis": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
