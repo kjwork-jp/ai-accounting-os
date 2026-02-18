@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
@@ -74,6 +75,34 @@ export async function middleware(request: NextRequest) {
   }
   if (API_AUTH_ONLY_PATHS.some(p => pathname.startsWith(p))) {
     return response;
+  }
+
+  // --- Tenant membership enforcement for all remaining paths ---
+  // Use admin client (service_role) to check tenant_users without RLS
+  const admin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  const { data: tenantUser } = await admin
+    .from('tenant_users')
+    .select('tenant_id')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!tenantUser) {
+    // No active tenant membership — redirect to onboarding
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'No active tenant membership. Complete onboarding first.' } },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL('/onboarding', request.url));
   }
 
   return response;
