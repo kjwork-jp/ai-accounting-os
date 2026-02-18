@@ -1,6 +1,15 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAuth, requireRole, ok, created, parseBody, notFound, conflict, internalError } from '@/lib/api/helpers';
+import {
+  conflict,
+  created,
+  notFound,
+  parseBody,
+  requireAuth,
+  requireRole,
+  ok,
+  internalError,
+} from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 
@@ -76,9 +85,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (!existingProfile) {
-    return notFound(
-      'このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。'
-    );
+    return notFound('このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。');
   }
 
   const insertPayload: Record<string, unknown> = {
@@ -92,12 +99,17 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await admin
     .from('tenant_users')
-    .insert(insertPayload)
+    .insert({
+      tenant_id: result.auth.tenantId,
+      user_id: existingProfile.user_id,
+      role: parsed.data.role,
+      custom_role_id: parsed.data.custom_role_id ?? null,
+    })
     .select()
     .single();
 
   if (error) {
-    if (error.message.includes('duplicate') || error.message.includes('unique')) {
+    if (error.code === '23505') {
       return conflict('このユーザーは既にテナントに所属しています');
     }
     return internalError(error.message);
