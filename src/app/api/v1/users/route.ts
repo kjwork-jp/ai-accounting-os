@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAuth, requireRole, ok, created, parseBody, internalError } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 
 export async function GET(request: NextRequest) {
@@ -11,14 +11,40 @@ export async function GET(request: NextRequest) {
   const roleCheck = requireRole(result.auth, ['admin']);
   if (roleCheck) return roleCheck;
 
-  const supabase = await createServerSupabase();
-  const { data, error } = await supabase
+  // Use admin client to bypass RLS for cross-user tenant query
+  const admin = createAdminSupabase();
+
+  const { data: tenantUsers, error } = await admin
     .from('tenant_users')
-    .select('*, profiles(*)')
+    .select('*')
     .eq('tenant_id', result.auth.tenantId)
     .order('created_at');
 
   if (error) return ok({ data: [], error: error.message });
+
+  // Fetch profiles separately to avoid FK join issues
+  const userIds = tenantUsers.map(tu => tu.user_id);
+  let profileMap: Record<string, { full_name: string | null; email: string | null }> = {};
+
+  if (userIds.length > 0) {
+    const { data: profiles } = await admin
+      .from('profiles')
+      .select('user_id, full_name, email')
+      .in('user_id', userIds);
+
+    if (profiles) {
+      profileMap = Object.fromEntries(
+        profiles.map(p => [p.user_id, { full_name: p.full_name, email: p.email }])
+      );
+    }
+  }
+
+  // Merge profiles into tenant_users
+  const data = tenantUsers.map(tu => ({
+    ...tu,
+    profiles: profileMap[tu.user_id] ?? null,
+  }));
+
   return ok({ data });
 }
 
@@ -39,13 +65,10 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(createSchema, body);
   if ('error' in parsed) return parsed.error;
 
-  // Note: In MVP, user creation is done via Supabase Auth invite
-  // This endpoint creates the tenant_users entry for an existing auth user
-  // Full invite flow would use Supabase Admin API with service_role
-  const supabase = await createServerSupabase();
+  const admin = createAdminSupabase();
 
-  // Check if user already exists in auth (by email, via profiles)
-  const { data: existingProfile } = await supabase
+  // Check if user exists by email in profiles
+  const { data: existingProfile } = await admin
     .from('profiles')
     .select('user_id')
     .eq('email', parsed.data.email)
@@ -53,11 +76,11 @@ export async function POST(request: NextRequest) {
 
   if (!existingProfile) {
     return internalError(
-      'User must first sign up. Invite flow via Supabase Admin API is required for production.'
+      'このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。'
     );
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from('tenant_users')
     .insert({
       tenant_id: result.auth.tenantId,

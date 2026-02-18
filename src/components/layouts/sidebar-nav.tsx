@@ -26,7 +26,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'ダッシュボード', href: '/', icon: LayoutDashboard },
+  { label: 'ダッシュボード', href: '/dashboard', icon: LayoutDashboard },
   { label: '証憑管理', href: '/documents', icon: FileText, roles: ['admin', 'accounting', 'viewer'] },
   { label: '仕訳', href: '/journals', icon: BookOpen, roles: ['admin', 'accounting', 'viewer'] },
   { label: '受注', href: '/sales-orders', icon: ShoppingCart, roles: ['admin', 'accounting', 'sales'] },
@@ -56,7 +56,7 @@ export function SidebarNav({ role }: SidebarNavProps) {
       {visibleItems.map(item => {
         const Icon = item.icon;
         const isActive = pathname === item.href ||
-          (item.href !== '/' && pathname.startsWith(item.href));
+          pathname.startsWith(item.href + '/');
 
         return (
           <Link

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZodSchema, ZodError } from 'zod';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createServerSupabase, createAdminSupabase } from '@/lib/supabase/server';
 import type { UserRole, TenantUser } from '@/types/database';
 
 // --- Error response format (技術設計書 04_API設計詳細) ---
@@ -102,19 +102,22 @@ export async function requireAuth(
 ): Promise<{ auth: AuthContext } | { error: NextResponse }> {
   // request param reserved for future use (IP extraction, rate limiting)
   void request;
-  const supabase = await createServerSupabase();
 
+  // Use session client for auth verification (needs user's JWT from cookies)
+  const supabase = await createServerSupabase();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     return { error: unauthorized() };
   }
 
-  // Get tenant membership (user belongs to exactly one tenant in MVP)
-  const { data: tenantUser, error: tuError } = await supabase
+  // Use admin client for tenant_users query to bypass RLS
+  const admin = createAdminSupabase();
+  const { data: tenantUser, error: tuError } = await admin
     .from('tenant_users')
     .select('*')
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .limit(1)
     .single();
 
   if (tuError || !tenantUser) {

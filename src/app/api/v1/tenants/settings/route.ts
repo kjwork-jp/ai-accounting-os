@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAuth, requireRole, ok, parseBody, internalError } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog, computeDiff } from '@/lib/audit/logger';
 
 const patchSchema = z.object({
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
   const { data } = await supabase
     .from('tenant_settings')
     .select('*')
@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest) {
   const parsed = parseBody(patchSchema, body);
   if ('error' in parsed) return parsed.error;
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
 
   // Get current for diff
   const { data: current } = await supabase

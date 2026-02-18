@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAuth, requireRole, ok, parseQuery } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 
 const querySchema = z.object({
   from: z.string().optional(),
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   if ('error' in qResult) return qResult.error;
   const q = qResult.data;
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
   let query = supabase
     .from('audit_logs')
     .select('*')
