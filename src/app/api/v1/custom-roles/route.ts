@@ -1,15 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  badRequest,
-  conflict,
-  created,
-  parseBody,
-  requireAuth,
-  requireRole,
-  ok,
-  internalError,
-} from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, created, parseBody, badRequest, conflict, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { VALID_PERMISSIONS } from '@/lib/auth/helpers';
 import { insertAuditLog } from '@/lib/audit/logger';
@@ -50,7 +41,7 @@ export async function POST(request: NextRequest) {
   // Validate permission strings
   const invalid = parsed.data.permissions.filter(p => !VALID_PERMISSIONS.includes(p));
   if (invalid.length > 0) {
-    return badRequest(`Invalid permissions: ${invalid.join(', ')}`);
+    return badRequest(`無効な権限文字列です: ${invalid.join(', ')}`);
   }
 
   const admin = createAdminSupabase();
@@ -67,7 +58,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) {
-    if (error.code === '23505' || error.message.includes('duplicate') || error.message.includes('unique')) {
+    if (error.message.includes('duplicate') || error.message.includes('unique')) {
       return conflict('同じ名前のカスタムロールが既に存在します');
     }
     return internalError(error.message);

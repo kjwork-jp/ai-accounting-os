@@ -110,13 +110,15 @@ export async function requireAuth(
     return { error: unauthorized() };
   }
 
-  // Use admin client for tenant_users query to bypass RLS
+  // Use admin client for tenant_users query to bypass RLS.
+  // Order by created_at ASC for deterministic selection (oldest membership first).
   const admin = createAdminSupabase();
   const { data: tenantUser, error: tuError } = await admin
     .from('tenant_users')
     .select('*')
     .eq('user_id', user.id)
     .eq('is_active', true)
+    .order('created_at', { ascending: true })
     .limit(1)
     .single();
 

@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-
 export interface Column<T> {
   key: string;
   label: string;
@@ -29,7 +28,7 @@ interface DataTableProps<T> {
 
 type SortDirection = 'asc' | 'desc' | null;
 
-export function DataTable<T extends object>({
+export function DataTable<T>({
   columns,
   data,
   pageSize = 20,
