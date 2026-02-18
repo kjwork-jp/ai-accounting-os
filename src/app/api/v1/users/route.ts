@@ -88,6 +88,15 @@ export async function POST(request: NextRequest) {
     return notFound('このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。');
   }
 
+  const insertPayload: Record<string, unknown> = {
+    tenant_id: result.auth.tenantId,
+    user_id: existingProfile.user_id,
+    role: parsed.data.role,
+  };
+  if (parsed.data.custom_role_id) {
+    insertPayload.custom_role_id = parsed.data.custom_role_id;
+  }
+
   const { data, error } = await admin
     .from('tenant_users')
     .insert({
