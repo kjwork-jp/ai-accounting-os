@@ -1,6 +1,15 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAuth, requireRole, ok, created, parseBody, internalError } from '@/lib/api/helpers';
+import {
+  conflict,
+  created,
+  notFound,
+  parseBody,
+  requireAuth,
+  requireRole,
+  ok,
+  internalError,
+} from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 
@@ -52,6 +61,7 @@ const createSchema = z.object({
   email: z.string().email(),
   full_name: z.string().min(1),
   role: z.enum(['admin', 'accounting', 'viewer', 'approver', 'sales']),
+  custom_role_id: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -70,14 +80,12 @@ export async function POST(request: NextRequest) {
   // Check if user exists by email in profiles
   const { data: existingProfile } = await admin
     .from('profiles')
-    .select('user_id')
+    .select('user_id, full_name, email')
     .eq('email', parsed.data.email)
     .single();
 
   if (!existingProfile) {
-    return internalError(
-      'このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。'
-    );
+    return notFound('このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。');
   }
 
   const { data, error } = await admin
@@ -86,11 +94,17 @@ export async function POST(request: NextRequest) {
       tenant_id: result.auth.tenantId,
       user_id: existingProfile.user_id,
       role: parsed.data.role,
+      custom_role_id: parsed.data.custom_role_id ?? null,
     })
     .select()
     .single();
 
-  if (error) return internalError(error.message);
+  if (error) {
+    if (error.code === '23505') {
+      return conflict('このユーザーは既にテナントに所属しています');
+    }
+    return internalError(error.message);
+  }
 
   await insertAuditLog({
     tenantId: result.auth.tenantId,
@@ -98,6 +112,7 @@ export async function POST(request: NextRequest) {
     action: 'create',
     entityType: 'tenant_users',
     entityId: existingProfile.user_id,
+    entityName: existingProfile.full_name || existingProfile.email || undefined,
   });
 
   return created(data);

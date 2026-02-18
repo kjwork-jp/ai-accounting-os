@@ -25,6 +25,13 @@ export async function POST(
 
   if (!current) return notFound('User not found in this tenant');
 
+
+  const { data: targetProfile } = await supabase
+    .from('profiles')
+    .select('full_name, email')
+    .eq('user_id', userId)
+    .single();
+
   const { error } = await supabase
     .from('tenant_users')
     .update({ is_active: false })
@@ -39,6 +46,7 @@ export async function POST(
     action: 'disable',
     entityType: 'tenant_users',
     entityId: userId,
+    entityName: targetProfile?.full_name || targetProfile?.email || undefined,
   });
 
   return ok({ success: true });
