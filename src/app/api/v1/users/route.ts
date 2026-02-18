@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAuth, requireRole, ok, created, parseBody, internalError } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, created, parseBody, notFound, conflict, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 
@@ -52,6 +52,7 @@ const createSchema = z.object({
   email: z.string().email(),
   full_name: z.string().min(1),
   role: z.enum(['admin', 'accounting', 'viewer', 'approver', 'sales']),
+  custom_role_id: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -75,22 +76,32 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (!existingProfile) {
-    return internalError(
+    return notFound(
       'このメールアドレスのユーザーが見つかりません。先にサインアップが必要です。'
     );
   }
 
+  const insertPayload: Record<string, unknown> = {
+    tenant_id: result.auth.tenantId,
+    user_id: existingProfile.user_id,
+    role: parsed.data.role,
+  };
+  if (parsed.data.custom_role_id) {
+    insertPayload.custom_role_id = parsed.data.custom_role_id;
+  }
+
   const { data, error } = await admin
     .from('tenant_users')
-    .insert({
-      tenant_id: result.auth.tenantId,
-      user_id: existingProfile.user_id,
-      role: parsed.data.role,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
-  if (error) return internalError(error.message);
+  if (error) {
+    if (error.message.includes('duplicate') || error.message.includes('unique')) {
+      return conflict('このユーザーは既にテナントに所属しています');
+    }
+    return internalError(error.message);
+  }
 
   await insertAuditLog({
     tenantId: result.auth.tenantId,
