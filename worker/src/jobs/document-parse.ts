@@ -3,6 +3,8 @@ import { createWorkerSupabase } from '../lib/supabase';
 import { analyzeDocument, type DiModelId } from '../lib/di-client';
 import { structureExtraction } from './structuring';
 import { classifyExtraction, type ClassificationResult } from './classification';
+import { checkDuplicates, type DuplicateSuspect } from './duplicate-check';
+import { emitMetric, emitLatency, METRIC } from '../lib/metrics';
 
 export interface DocumentParsePayload {
   documentId: string;
@@ -145,6 +147,35 @@ export async function processDocumentParse(
       throw new Error(`Document update failed: ${docUpdateError.message}`);
     }
 
+    // Step 7: Near-duplicate detection (non-fatal)
+    let duplicateSuspects: DuplicateSuspect[] = [];
+    try {
+      const dupResult = await checkDuplicates({
+        documentId,
+        tenantId,
+        documentDate: structured.document_date,
+        amount: structured.total_amount,
+      }, supabase);
+      duplicateSuspects = dupResult.suspects;
+
+      if (duplicateSuspects.length > 0) {
+        await supabase
+          .from('document_extractions')
+          .update({
+            extracted_json: { ...structured, classification, duplicate_suspects: duplicateSuspects },
+          })
+          .eq('document_id', documentId)
+          .eq('tenant_id', tenantId);
+
+        log('warn', 'Duplicate suspects found', { duplicateCount: duplicateSuspects.length });
+      }
+      emitMetric(METRIC.DUPLICATE_CHECK_COUNT, duplicateSuspects.length, { documentId });
+    } catch (err) {
+      log('warn', 'Duplicate check failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     const latencyMs = Date.now() - startTime;
     log('info', 'Job succeeded', {
       latencyMs,
@@ -152,9 +183,12 @@ export async function processDocumentParse(
       modelId,
       documentType: classification.documentType,
       classificationMethod: classification.method,
-      metric: 'ocr_job_latency_ms',
-      metricValue: latencyMs,
+      duplicateCount: duplicateSuspects.length,
     });
+    emitLatency(latencyMs, { documentId, tenantId, modelId });
+    emitMetric(METRIC.OCR_JOB_SUCCESS, 1, { documentId, documentType: classification.documentType });
+    emitMetric(METRIC.CLASSIFICATION_METHOD, 1, { method: classification.method });
+    emitMetric(METRIC.OCR_RETRY_COUNT, job.attemptsMade, { documentId });
   } catch (error) {
     // Update status to error
     await supabase
@@ -166,11 +200,10 @@ export async function processDocumentParse(
     const errorMessage = error instanceof Error ? error.message : String(error);
     const latencyMs = Date.now() - startTime;
 
-    log('error', 'Job failed', {
-      error: errorMessage,
-      latencyMs,
-      metric: 'ocr_job_failure',
-    });
+    log('error', 'Job failed', { error: errorMessage, latencyMs });
+    emitMetric(METRIC.OCR_JOB_FAILURE, 1, { documentId, tenantId });
+    emitLatency(latencyMs, { documentId, tenantId, failed: true });
+    emitMetric(METRIC.OCR_RETRY_COUNT, job.attemptsMade, { documentId });
 
     // Re-throw so BullMQ can retry
     throw error;
