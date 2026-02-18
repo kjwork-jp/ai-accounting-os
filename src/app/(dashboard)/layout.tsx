@@ -16,29 +16,10 @@ export default async function DashboardRootLayout({
     redirect('/login');
   }
 
-  // Authenticated but no tenant membership
+  // Authenticated but no tenant membership → onboarding
   const tenantUser = await getCurrentTenantUser();
   if (!tenantUser) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="w-full max-w-md rounded-lg bg-white p-8 shadow text-center">
-          <h1 className="text-xl font-bold text-gray-900">テナント未割当</h1>
-          <p className="mt-4 text-sm text-gray-600">
-            ログイン済みですが、テナントに割り当てられていません。
-            管理者に連絡してください。
-          </p>
-          <p className="mt-2 text-xs text-gray-400">User ID: {user.id}</p>
-          <form action="/api/v1/auth/logout" method="POST">
-            <button
-              type="submit"
-              className="mt-6 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-            >
-              ログアウト
-            </button>
-          </form>
-        </div>
-      </div>
-    );
+    redirect('/onboarding');
   }
 
   return (

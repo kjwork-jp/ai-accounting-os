@@ -8,8 +8,6 @@ const signupSchema = z.object({
   full_name: z.string().min(1),
 });
 
-const DEV_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const parsed = signupSchema.safeParse(body);
@@ -36,7 +34,7 @@ export async function POST(request: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 
-  // 1. Create user with email auto-confirmed (no verification email)
+  // 1. Create user with email auto-confirmed (no verification email needed)
   const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
@@ -58,9 +56,8 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = userData.user.id;
-  const errors: string[] = [];
 
-  // 2. Create profile
+  // 2. Create profile (no tenant assignment — user will create/join tenant via onboarding)
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .upsert({
@@ -70,30 +67,8 @@ export async function POST(request: NextRequest) {
     }, { onConflict: 'user_id' });
 
   if (profileError) {
-    errors.push(`profile: ${profileError.message}`);
-  }
-
-  // 3. Assign to dev tenant
-  const { error: tenantUserError } = await supabaseAdmin
-    .from('tenant_users')
-    .upsert({
-      tenant_id: DEV_TENANT_ID,
-      user_id: userId,
-      role: 'admin',
-      is_active: true,
-    }, { onConflict: 'tenant_id,user_id' });
-
-  if (tenantUserError) {
-    errors.push(`tenant_users: ${tenantUserError.message}`);
-  }
-
-  if (errors.length > 0) {
     return NextResponse.json(
-      {
-        message: 'ユーザーは作成されましたが、一部のセットアップに失敗しました。',
-        userId,
-        warnings: errors,
-      },
+      { message: 'ユーザーは作成されましたが、プロフィールの作成に失敗しました。', userId, warning: profileError.message },
       { status: 201 }
     );
   }
