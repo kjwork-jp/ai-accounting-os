@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireRole, ok, created, parseBody, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { VALID_PERMISSIONS } from '@/lib/auth/helpers';
+import { insertAuditLog } from '@/lib/audit/logger';
 
 export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
@@ -62,6 +63,15 @@ export async function POST(request: NextRequest) {
     }
     return internalError(error.message);
   }
+
+  await insertAuditLog({
+    tenantId: result.auth.tenantId,
+    actorUserId: result.auth.userId,
+    action: 'create',
+    entityType: 'tenant_custom_roles',
+    entityId: data.id,
+    entityName: data.name,
+  });
 
   return created(data);
 }

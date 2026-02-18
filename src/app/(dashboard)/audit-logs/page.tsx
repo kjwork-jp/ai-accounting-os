@@ -133,9 +133,14 @@ export default function AuditLogsPage() {
           <div className="text-sm font-medium">
             {ENTITY_TYPE_LABELS[row.entity_type] ?? row.entity_type}
           </div>
-          {row.entity_id && (
+          {row.entity_name && (
+            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+              {row.entity_name}
+            </div>
+          )}
+          {!row.entity_name && row.entity_id && (
             <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-              {row.entity_id}
+              {row.entity_id.slice(0, 8)}...
             </div>
           )}
         </div>
@@ -147,7 +152,7 @@ export default function AuditLogsPage() {
       sortable: true,
       render: (row) => (
         <span className="text-sm">
-          {row.actor_name ?? row.actor_user_id?.slice(0, 8) ?? '-'}
+          {row.actor_name ?? '-'}
         </span>
       ),
     },

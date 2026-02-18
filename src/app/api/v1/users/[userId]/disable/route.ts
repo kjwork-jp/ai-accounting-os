@@ -35,6 +35,7 @@ export async function POST(
 
   await insertAuditLog({
     tenantId: result.auth.tenantId,
+    actorUserId: result.auth.userId,
     action: 'disable',
     entityType: 'tenant_users',
     entityId: userId,

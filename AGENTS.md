@@ -37,7 +37,7 @@ src/
     api/
       helpers.ts          # requireAuth, requireRole, response helpers
     audit/
-      logger.ts           # Audit log insertion (via RPC)
+      logger.ts           # Audit log insertion (direct insert + actor/entity name resolution)
   types/
     database.ts           # All 26 table types + enums
   hooks/                  # React hooks
@@ -182,6 +182,42 @@ approvals:create, approvals:approve, approvals:view,
 reports:view, audit:view
 ```
 
+## Audit Logging
+
+全ての重要操作は `audit_logs` テーブルに記録される。
+
+### insertAuditLog() の使い方
+
+```typescript
+await insertAuditLog({
+  tenantId: result.auth.tenantId,
+  actorUserId: result.auth.userId,   // 必須: 実行者ID
+  action: 'create',                   // create/update/delete/disable
+  entityType: 'tenant_users',         // テーブル名
+  entityId: userId,                   // 対象ID
+  entityName: '山田太郎',              // 省略可: 自動解決される
+  diffJson: computeDiff(old, new),    // 省略可: 変更差分
+  requestId: getRequestId(request),   // 省略可: リクエスト追跡ID
+});
+```
+
+- `actorUserId` は必須。プロフィールから `actor_name` を自動解決。
+- `entityName` は省略可。`entity_type` + `entity_id` から自動解決される。
+- 対応エンティティ: `tenant_users`, `tenants`, `tenant_settings`, `tenant_custom_roles`, `partners`, `documents`
+
+### 文書アップロード API
+
+```
+POST /api/v1/documents/upload
+Content-Type: multipart/form-data
+Idempotency-Key: <optional-uuid>
+
+- 10MB上限
+- SHA-256ハッシュ計算・重複検知
+- Supabase Storage保存
+- 対応形式: PDF, JPEG, PNG, WebP, TIFF, CSV, XLSX
+```
+
 ## Security Rules
 
 - テナント分離: 全テーブルに tenant_id + RLS
@@ -189,6 +225,7 @@ reports:view, audit:view
 - 証憑改ざん検知: SHA-256 ハッシュ
 - 認証: Supabase Auth (Email + TOTP MFA + Google OAuth)
 - 証憑保持: 電子帳簿保存法に準じ最低7年
+- セキュリティ要件マッピング: `docs/sec-mapping.md`
 
 ## Testing
 
@@ -215,9 +252,26 @@ reports:view, audit:view
 4. `git diff --stat` で差分レビュー
 5. コミット & push → PR
 
+## Notifications
+
+- `sonner` (shadcn/ui Sonner) を使用
+- `<Toaster />` はルートレイアウトに配置済み
+- 使い方: `import { toast } from 'sonner'; toast.success('保存しました');`
+
 ## Key Reference Documents
 
 設計判断に迷った場合は `Claude_Code_Document/` ディレクトリ内を参照:
 
 - 要件定義書 / WBS (V8) / DB設計書 / 技術設計書
 - メイン統一手順書 / コピペ用テンプレート集
+
+### docs/ ディレクトリ
+
+| ファイル | 内容 |
+|---------|------|
+| `S0-review-and-S1-plan.md` | S0完了レビュー + S1〜S6実施手順書 |
+| `DB-007_マスタデータ投入.md` | マスタデータ Seed 仕様 |
+| `verification-guide.md` | S1機能検証チェックリスト |
+| `sec-mapping.md` | SEC-001〜005 セキュリティ要件マッピング |
+| `backup-restore.md` | バックアップ・リストア手順書 |
+| `monitoring.md` | 監視設計書 |

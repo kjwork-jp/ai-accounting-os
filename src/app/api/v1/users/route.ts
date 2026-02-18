@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
 
   await insertAuditLog({
     tenantId: result.auth.tenantId,
+    actorUserId: result.auth.userId,
     action: 'create',
     entityType: 'tenant_users',
     entityId: existingProfile.user_id,

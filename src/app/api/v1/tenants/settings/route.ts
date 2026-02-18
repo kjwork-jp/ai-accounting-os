@@ -57,6 +57,7 @@ export async function PATCH(request: NextRequest) {
   if (current) {
     await insertAuditLog({
       tenantId: result.auth.tenantId,
+      actorUserId: result.auth.userId,
       action: 'update',
       entityType: 'tenant_settings',
       entityId: result.auth.tenantId,

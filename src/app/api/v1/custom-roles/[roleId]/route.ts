@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireRole, ok, notFound, parseBody, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { VALID_PERMISSIONS } from '@/lib/auth/helpers';
+import { insertAuditLog, computeDiff } from '@/lib/audit/logger';
 
 export async function PATCH(
   request: NextRequest,
@@ -54,6 +55,16 @@ export async function PATCH(
     .single();
 
   if (error) return internalError(error.message);
+
+  await insertAuditLog({
+    tenantId: result.auth.tenantId,
+    actorUserId: result.auth.userId,
+    action: 'update',
+    entityType: 'tenant_custom_roles',
+    entityId: roleId,
+    diffJson: computeDiff(current as Record<string, unknown>, data as Record<string, unknown>),
+  });
+
   return ok(data);
 }
 
@@ -77,5 +88,14 @@ export async function DELETE(
     .eq('tenant_id', result.auth.tenantId);
 
   if (error) return internalError(error.message);
+
+  await insertAuditLog({
+    tenantId: result.auth.tenantId,
+    actorUserId: result.auth.userId,
+    action: 'delete',
+    entityType: 'tenant_custom_roles',
+    entityId: roleId,
+  });
+
   return ok({ success: true });
 }
