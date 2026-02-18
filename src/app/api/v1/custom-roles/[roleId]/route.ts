@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAuth, requireRole, ok, notFound, parseBody, internalError } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, notFound, parseBody, badRequest, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { VALID_PERMISSIONS } from '@/lib/auth/helpers';
 import { insertAuditLog, computeDiff } from '@/lib/audit/logger';
@@ -31,7 +31,7 @@ export async function PATCH(
   if (parsed.data.permissions) {
     const invalid = parsed.data.permissions.filter(p => !VALID_PERMISSIONS.includes(p));
     if (invalid.length > 0) {
-      return internalError(`Invalid permissions: ${invalid.join(', ')}`);
+      return badRequest(`無効な権限文字列です: ${invalid.join(', ')}`);
     }
   }
 
