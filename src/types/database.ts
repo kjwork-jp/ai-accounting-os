@@ -34,6 +34,7 @@ export type UserRole = 'admin' | 'accounting' | 'viewer' | 'approver' | 'sales';
 
 export type DocumentStatus =
   | 'uploaded'
+  | 'queued'
   | 'processing'
   | 'extracted'
   | 'verified'

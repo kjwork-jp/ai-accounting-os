@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { requireAuth, ok, badRequest, conflict, internalError, getRequestId } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
+import { enqueueDocumentParse } from '@/lib/queue/enqueue';
 import { createHash } from 'crypto';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -147,5 +148,28 @@ export async function POST(request: NextRequest) {
     requestId,
   });
 
-  return ok({ data: doc }, 201);
+  // Auto-enqueue OCR if requested (for PDF/image files)
+  const autoParse = request.nextUrl.searchParams.get('auto_parse') === 'true';
+  const isOcrTarget = file.type === 'application/pdf' || file.type.startsWith('image/');
+  let jobId: string | null = null;
+
+  if (autoParse && isOcrTarget) {
+    try {
+      await admin
+        .from('documents')
+        .update({ status: 'queued' })
+        .eq('id', doc.id)
+        .eq('tenant_id', result.auth.tenantId);
+
+      jobId = await enqueueDocumentParse({
+        documentId: doc.id,
+        tenantId: result.auth.tenantId,
+      });
+    } catch {
+      // Non-fatal: upload succeeded but enqueue failed
+      // User can manually enqueue later
+    }
+  }
+
+  return ok({ data: { ...doc, jobId } }, 201);
 }
