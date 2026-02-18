@@ -18,6 +18,7 @@ export async function PATCH(
   const patchSchema = z.object({
     role: z.enum(['admin', 'accounting', 'viewer', 'approver', 'sales']).optional(),
     is_active: z.boolean().optional(),
+    custom_role_id: z.string().uuid().nullable().optional(),
   });
 
   const body = await request.json();
