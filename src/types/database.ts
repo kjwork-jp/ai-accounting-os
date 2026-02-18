@@ -363,6 +363,7 @@ export interface AuditLog {
   action: string;
   entity_type: string;
   entity_id: string | null;
+  entity_name: string | null;
   actor_user_id: string | null;
   actor_name: string | null;
   request_id: string | null;

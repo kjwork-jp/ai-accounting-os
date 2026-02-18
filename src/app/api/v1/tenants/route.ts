@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase/server';
+import { insertAuditLog } from '@/lib/audit/logger';
 
 const createTenantSchema = z.object({
   name: z.string().min(1).max(100),
@@ -88,6 +89,15 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  await insertAuditLog({
+    tenantId: tenant.id,
+    actorUserId: user.id,
+    action: 'create',
+    entityType: 'tenants',
+    entityId: tenant.id,
+    entityName: tenant.name,
+  });
 
   return NextResponse.json({ data: tenant }, { status: 201 });
 }
