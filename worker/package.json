@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.76.0",
     "@supabase/supabase-js": "^2.96.0",
     "bullmq": "^5.69.3",
     "ioredis": "^5.9.3"

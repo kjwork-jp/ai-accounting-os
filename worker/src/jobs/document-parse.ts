@@ -2,6 +2,7 @@ import type { Job } from 'bullmq';
 import { createWorkerSupabase } from '../lib/supabase';
 import { analyzeDocument, type DiModelId } from '../lib/di-client';
 import { structureExtraction } from './structuring';
+import { classifyExtraction, type ClassificationResult } from './classification';
 
 export interface DocumentParsePayload {
   documentId: string;
@@ -87,13 +88,34 @@ export async function processDocumentParse(
     // Step 4: Structure extracted data
     const structured = structureExtraction(diResult);
 
+    // Step 4b: Classify document (non-fatal)
+    let classification: ClassificationResult;
+    try {
+      classification = await classifyExtraction(structured, modelId, doc.file_name);
+      log('info', 'Classification complete', {
+        documentType: classification.documentType,
+        classificationConfidence: classification.confidence,
+        classificationMethod: classification.method,
+      });
+    } catch (err) {
+      classification = {
+        documentType: 'other',
+        confidence: 0,
+        method: 'rule',
+        reasoning: 'Classification failed unexpectedly',
+      };
+      log('warn', 'Classification failed, defaulting to other', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     // Step 5: Save extraction to document_extractions
     const { error: extractionError } = await supabase
       .from('document_extractions')
       .insert({
         tenant_id: tenantId,
         document_id: documentId,
-        extracted_json: structured,
+        extracted_json: { ...structured, classification },
         model_provider: 'azure',
         model_name: modelId,
         model_version: diResult.modelId,
@@ -110,6 +132,7 @@ export async function processDocumentParse(
       .from('documents')
       .update({
         status: 'extracted',
+        document_type: classification.documentType,
         document_date: structured.document_date,
         amount: structured.total_amount,
         tax_amount: structured.tax_amount,
@@ -127,6 +150,8 @@ export async function processDocumentParse(
       latencyMs,
       confidence: structured.confidence,
       modelId,
+      documentType: classification.documentType,
+      classificationMethod: classification.method,
       metric: 'ocr_job_latency_ms',
       metricValue: latencyMs,
     });

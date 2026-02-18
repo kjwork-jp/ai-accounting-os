@@ -87,7 +87,7 @@ export function DocumentList({ filters }: DocumentListProps) {
 
   const handleRetry = async (docId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const res = await fetch(`/api/v1/documents/${docId}/enqueue-parse`, {
+    const res = await fetch(`/api/v1/documents/${docId}/retry`, {
       method: 'POST',
     });
     if (res.ok) {
