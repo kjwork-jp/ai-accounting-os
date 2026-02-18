@@ -1,4 +1,4 @@
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 
 interface AuditLogParams {
   tenantId: string;
@@ -15,7 +15,7 @@ interface AuditLogParams {
  * See DB設計書 09_監査ログ設計.
  */
 export async function insertAuditLog(params: AuditLogParams): Promise<string | null> {
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
 
   // Try RPC first (security definer, ensures actor_user_id is set correctly)
   const { data, error } = await supabase.rpc('insert_audit_log', {

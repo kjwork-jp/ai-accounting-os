@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAuth, requireRole, ok, notFound, parseBody, internalError } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog, computeDiff } from '@/lib/audit/logger';
 
 export async function PATCH(
@@ -24,7 +24,7 @@ export async function PATCH(
   const parsed = parseBody(patchSchema, body);
   if ('error' in parsed) return parsed.error;
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
 
   const { data: current } = await supabase
     .from('tenant_users')

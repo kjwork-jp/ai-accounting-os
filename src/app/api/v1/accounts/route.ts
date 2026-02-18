@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAuth, ok, created, parseBody } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   const includeInactive = request.nextUrl.searchParams.get('includeInactive') === 'true';
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
   let query = supabase
     .from('m_accounts')
     .select('*')
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(createSchema, body);
   if ('error' in parsed) return parsed.error;
 
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
   const { data, error } = await supabase
     .from('m_accounts')
     .insert({

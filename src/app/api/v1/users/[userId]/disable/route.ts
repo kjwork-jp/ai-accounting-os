@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, requireRole, ok, notFound, internalError } from '@/lib/api/helpers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 
 export async function POST(
@@ -14,7 +14,7 @@ export async function POST(
   if (roleCheck) return roleCheck;
 
   const { userId } = await params;
-  const supabase = await createServerSupabase();
+  const supabase = createAdminSupabase();
 
   const { data: current } = await supabase
     .from('tenant_users')
