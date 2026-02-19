@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, ok, badRequest, internalError } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, badRequest, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { documentsListQuerySchema } from '@/lib/validators/documents';
 
@@ -11,6 +11,9 @@ import { documentsListQuerySchema } from '@/lib/validators/documents';
 export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
+
+  const roleError = requireRole(result.auth, ['admin', 'accounting', 'viewer']);
+  if (roleError) return roleError;
 
   const searchParams = request.nextUrl.searchParams;
   const queryObj: Record<string, string> = {};
