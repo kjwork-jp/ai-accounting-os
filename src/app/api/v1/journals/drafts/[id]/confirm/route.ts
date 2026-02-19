@@ -265,6 +265,22 @@ export async function POST(
     }));
   }
 
+  // Step 12: Emit metrics (structured JSON for container logging)
+  console.log(JSON.stringify({
+    metric: 'journal_confirm_count',
+    value: 1,
+    labels: { draftId, entryId: entry.id, override: isOverride },
+    timestamp: new Date().toISOString(),
+  }));
+  if (isOverride) {
+    console.log(JSON.stringify({
+      metric: 'journal_override_count',
+      value: 1,
+      labels: { draftId, entryId: entry.id },
+      timestamp: new Date().toISOString(),
+    }));
+  }
+
   return ok({
     data: {
       journal_entry_id: entry.id,

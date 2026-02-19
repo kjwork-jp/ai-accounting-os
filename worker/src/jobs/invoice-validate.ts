@@ -47,6 +47,7 @@ export async function processInvoiceValidate(
 
   log('info', 'Job started');
 
+  try {
   // Step 1: Fetch extraction
   const { data: extraction, error: extError } = await supabase
     .from('document_extractions')
@@ -159,4 +160,12 @@ export async function processInvoiceValidate(
   emitMetric(METRIC.INVOICE_VALIDATE_SUCCESS, 1, { documentId, status });
 
   return { status, checkId: check.id };
+
+  } catch (error) {
+    const latencyMs = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log('error', 'Job failed', { error: errorMessage, latencyMs });
+    emitMetric(METRIC.INVOICE_VALIDATE_FAILURE, 1, { documentId, tenantId });
+    throw error;
+  }
 }
