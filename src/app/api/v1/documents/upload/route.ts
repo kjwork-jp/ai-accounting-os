@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, ok, badRequest, conflict, internalError, getRequestId } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, badRequest, conflict, internalError, getRequestId } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 import { enqueueDocumentParse } from '@/lib/queue/enqueue';
@@ -25,6 +25,9 @@ const STORAGE_BUCKET = 'documents';
 export async function POST(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
+
+  const roleError = requireRole(result.auth, ['admin', 'accounting']);
+  if (roleError) return roleError;
 
   const requestId = getRequestId(request);
   const idempotencyKey = request.headers.get('idempotency-key');
@@ -165,9 +168,16 @@ export async function POST(request: NextRequest) {
         documentId: doc.id,
         tenantId: result.auth.tenantId,
       });
-    } catch {
-      // Non-fatal: upload succeeded but enqueue failed
-      // User can manually enqueue later
+    } catch (err) {
+      // Non-fatal: upload succeeded but enqueue failed — user can manually enqueue later
+      console.log(JSON.stringify({
+        level: 'warn',
+        message: 'auto_parse enqueue failed (non-fatal)',
+        documentId: doc.id,
+        tenantId: result.auth.tenantId,
+        error: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      }));
     }
   }
 
