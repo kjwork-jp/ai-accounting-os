@@ -42,7 +42,7 @@ describe('metrics', () => {
   });
 
   it('emitLatency sets slo_breach=true when exceeding threshold', () => {
-    emitLatency(130_000, { documentId: 'doc-1' });
+    emitLatency(250_000, { documentId: 'doc-1' });
     const output = JSON.parse(consoleSpy.mock.calls[0][0] as string);
     expect(output.labels.slo_breach).toBe(true);
   });
@@ -54,8 +54,8 @@ describe('metrics', () => {
   });
 
   it('SLO constants have correct values', () => {
-    expect(SLO.OCR_JOB_LATENCY_P95_MS).toBe(120_000);
-    expect(SLO.OCR_SUCCESS_RATE_DAILY).toBe(0.95);
+    expect(SLO.OCR_JOB_LATENCY_P95_MS).toBe(240_000);
+    expect(SLO.OCR_SUCCESS_RATE_DAILY).toBe(0.99);
     expect(SLO.QUEUE_DEPTH_HEAVY_MAX).toBe(50);
   });
 });

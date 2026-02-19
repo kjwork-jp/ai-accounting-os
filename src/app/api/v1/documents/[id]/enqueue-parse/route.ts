@@ -43,7 +43,7 @@ export async function POST(
     );
   }
 
-  // Optimistic update: status → queued
+  // Optimistic update: status → queued (detect 0-row conflict)
   const previousStatus = doc.status;
   const updateResult = await admin
     .from('documents')
