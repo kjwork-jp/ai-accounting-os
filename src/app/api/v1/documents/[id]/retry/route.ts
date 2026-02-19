@@ -44,7 +44,7 @@ export async function POST(
   }
 
   // Optimistic update: error → queued
-  const { data: updatedRow, error: updateError } = await admin
+  const updateResult = await admin
     .from('documents')
     .update({ status: 'queued' })
     .eq('id', documentId)
@@ -53,11 +53,11 @@ export async function POST(
     .select('id')
     .single();
 
-  if (!updatedDoc) {
-    return conflict('他の処理によりステータスが更新されたため、リトライできませんでした。再読み込み後に再実行してください。');
+  if (updateResult.error) {
+    return internalError(`ステータス更新に失敗しました: ${updateResult.error.message}`);
   }
 
-  if (!updatedRow) {
+  if (!updateResult.data) {
     return conflict('他の処理によりステータスが更新されたため、リトライできませんでした。再読み込み後に再実行してください。');
   }
 

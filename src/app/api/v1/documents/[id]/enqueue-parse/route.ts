@@ -45,7 +45,7 @@ export async function POST(
 
   // Optimistic update: status → queued (detect 0-row conflict)
   const previousStatus = doc.status;
-  const { data: updatedRow, error: updateError } = await admin
+  const updateResult = await admin
     .from('documents')
     .update({ status: 'queued' })
     .eq('id', documentId)
@@ -54,15 +54,11 @@ export async function POST(
     .select('id')
     .single();
 
-  if (!updatedDoc) {
-    return conflict('他の処理によりステータスが更新されたため、OCR処理を開始できませんでした。再読み込み後に再実行してください。');
+  if (updateResult.error) {
+    return internalError(`ステータス更新に失敗しました: ${updateResult.error.message}`);
   }
 
-  if (!updatedRow) {
-    return conflict('他の処理によりステータスが更新されたため、OCR処理を開始できませんでした。再読み込み後に再実行してください。');
-  }
-
-  if (!updatedRow) {
+  if (!updateResult.data) {
     return conflict('他の処理によりステータスが更新されたため、OCR処理を開始できませんでした。再読み込み後に再実行してください。');
   }
 
