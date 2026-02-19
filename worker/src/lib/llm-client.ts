@@ -78,7 +78,7 @@ ${input.rawText.slice(0, 4000)}`;
     .join('');
 
   // Parse JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const jsonMatch = text.match(/\{[\s\S]*?\}/);
   if (!jsonMatch) {
     throw new Error(`LLM response did not contain valid JSON: ${text.slice(0, 200)}`);
   }

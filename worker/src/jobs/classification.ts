@@ -4,7 +4,7 @@ import { classifyDocument } from '../lib/llm-client';
 
 /**
  * OCR classifiable document types (excludes bank_statement/credit_card which are CSV-only).
- * Local copy of src/lib/validators/documents.ts to avoid cross-package imports.
+ * SYNC: src/lib/validators/documents.ts:20 — keep values in sync when modifying.
  */
 const OCR_CLASSIFIABLE_TYPES = [
   'invoice', 'receipt', 'quotation', 'contract', 'other',

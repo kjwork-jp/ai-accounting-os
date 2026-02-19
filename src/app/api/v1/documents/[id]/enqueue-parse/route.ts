@@ -43,7 +43,7 @@ export async function POST(
     );
   }
 
-  // Optimistic update: status → queued
+  // Optimistic update: status → queued (detect 0-row conflict)
   const previousStatus = doc.status;
   const { data: updatedDoc, error: updateError } = await admin
     .from('documents')
@@ -54,8 +54,8 @@ export async function POST(
     .select('id')
     .single();
 
-  if (updateError) {
-    return internalError(`ステータス更新に失敗しました: ${updateError.message}`);
+  if (updateError || !updated) {
+    return conflict('別のリクエストによりステータスが変更されました。ページを再読み込みしてください。');
   }
 
   if (!updatedDoc) {
