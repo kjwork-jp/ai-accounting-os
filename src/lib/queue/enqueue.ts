@@ -7,13 +7,14 @@ export interface DocumentParsePayload {
 
 /**
  * Enqueue a document_parse job to the heavy queue.
- * Uses documentId as jobId for idempotency (prevents duplicate enqueue).
+ * jobId includes timestamp to avoid BullMQ rejecting re-enqueue after removeOnComplete.
+ * Duplicate prevention is handled by status gate (optimistic lock) in API layer.
  */
 export async function enqueueDocumentParse(
   payload: DocumentParsePayload
 ): Promise<string> {
   const queue = getHeavyQueue();
-  const jobId = `doc_parse:${payload.documentId}`;
+  const jobId = `doc_parse:${payload.documentId}:${Date.now()}`;
 
   const job = await queue.add('document_parse', payload, {
     jobId,
