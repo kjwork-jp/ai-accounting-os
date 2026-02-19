@@ -37,7 +37,19 @@ export async function POST(
 
   const { id: draftId } = await params;
   const requestId = getRequestId(request);
+  const idempotencyKey = request.headers.get('idempotency-key');
   const admin = createAdminSupabase();
+
+  // Idempotency-Key warning (推奨強制)
+  if (!idempotencyKey) {
+    console.log(JSON.stringify({
+      level: 'warn',
+      message: 'Idempotency-Key header missing on confirm request',
+      draftId,
+      requestId,
+      timestamp: new Date().toISOString(),
+    }));
+  }
 
   // Parse body
   let body: unknown;
@@ -55,14 +67,14 @@ export async function POST(
   // Step 1: Fetch draft with optimistic lock — must be suggested or needs_review
   const { data: draft, error: draftError } = await admin
     .from('journal_drafts')
-    .select('*, documents(id, document_date)')
+    .select('*, documents(id, document_date, amount)')
     .eq('id', draftId)
     .eq('tenant_id', result.auth.tenantId)
     .in('status', ['suggested', 'needs_review'])
     .single();
 
   if (draftError || !draft) {
-    // Check if already confirmed
+    // Check if already confirmed — idempotent retry returns original result
     const { data: existingDraft } = await admin
       .from('journal_drafts')
       .select('status')
@@ -71,6 +83,23 @@ export async function POST(
       .single();
 
     if (existingDraft?.status === 'confirmed') {
+      // Idempotent response: return existing journal_entry for retried requests
+      const { data: existingEntry } = await admin
+        .from('journal_entries')
+        .select('id')
+        .eq('journal_draft_id', draftId)
+        .eq('tenant_id', result.auth.tenantId)
+        .single();
+
+      if (existingEntry) {
+        return ok({
+          data: {
+            journal_entry_id: existingEntry.id,
+            journal_draft_id: draftId,
+            status: 'confirmed',
+          },
+        }, 200);
+      }
       return conflict('この仕訳候補は既に確定済みです。ページを再読み込みしてください。');
     }
     return notFound('仕訳候補が見つかりません');
@@ -212,6 +241,22 @@ export async function POST(
   }
 
   // Step 10: Insert feedback_event (CMN-006/ACC-019)
+  // Include vendor_name for future same-vendor pattern matching (§3.4)
+  let vendorName: string | null = null;
+  if (draft.document_id) {
+    const { data: ext } = await admin
+      .from('document_extractions')
+      .select('extracted_json')
+      .eq('document_id', draft.document_id)
+      .eq('tenant_id', result.auth.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (ext?.extracted_json) {
+      vendorName = (ext.extracted_json as Record<string, unknown>).vendor_name as string ?? null;
+    }
+  }
+
   try {
     await admin
       .from('feedback_events')
@@ -225,6 +270,7 @@ export async function POST(
           selected_index: selectedIndex,
           override: isOverride,
           override_reason: overrideReason ?? null,
+          vendor_name: vendorName,
           final_lines: finalLines,
           final_description: finalDescription,
         } as unknown as Record<string, unknown>,

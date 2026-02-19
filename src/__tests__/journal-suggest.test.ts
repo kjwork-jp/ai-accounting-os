@@ -253,4 +253,113 @@ describe('processJournalSuggest', () => {
 
     // Should not throw — limited to 3 candidates
   });
+
+  it('should insert error draft when LLM returns no candidates', async () => {
+    const insertMock = vi.fn().mockResolvedValue({ error: null });
+    // Custom mock setup: track all from() calls to capture error draft insert
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'document_extractions') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { extracted_json: { vendor_name: 'テスト', document_type: 'invoice' } },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'invoice_checks') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'm_accounts') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'feedback_events') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'tenant_settings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { auto_confirm_high: 0.9, auto_confirm_mid: 0.7 },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      // journal_drafts — both success insert and error draft insert
+      return { insert: insertMock };
+    });
+
+    mockedSuggestJournal.mockResolvedValue(
+      JSON.stringify({ candidates: [], overall_confidence: 0 })
+    );
+
+    await expect(
+      processJournalSuggest(makeJob({ documentId: 'doc-1', tenantId: 'tenant-1' }))
+    ).rejects.toThrow('no candidates');
+
+    // Verify error draft was inserted
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'error',
+        document_id: 'doc-1',
+        tenant_id: 'tenant-1',
+      })
+    );
+  });
+
+  it('should mark low confidence drafts with ai_reason prefix', async () => {
+    setupSupabaseMocks();
+    // Confidence below mid threshold (0.70)
+    const response = makeLlmResponse({ overall_confidence: 0.50 });
+    response.candidates[0].confidence = 0.50;
+    mockedSuggestJournal.mockResolvedValue(JSON.stringify(response));
+
+    await processJournalSuggest(makeJob({ documentId: 'doc-1', tenantId: 'tenant-1' }));
+
+    // Should succeed — low confidence gets [低信頼度] prefix in ai_reason
+    const lastCall = mockSupabase.from.mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe('journal_drafts');
+  });
 });

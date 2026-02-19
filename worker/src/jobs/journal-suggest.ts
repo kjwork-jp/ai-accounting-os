@@ -133,20 +133,31 @@ export async function processJournalSuggest(
 
     const accountCodes = new Set((accounts ?? []).map(a => a.code));
 
-    // Step 4: Fetch past confirmation patterns (recent 10 for same vendor)
+    // Step 4: Fetch past confirmation patterns (same vendor priority, fallback to recent tenant-wide)
     let pastPatterns = '';
     const vendorName = ext.vendor_name;
     if (vendorName && typeof vendorName === 'string') {
+      // Fetch more records, then filter for same vendor client-side
       const { data: feedbacks } = await supabase
         .from('feedback_events')
         .select('user_correction_json, created_at')
         .eq('tenant_id', tenantId)
         .eq('entity_type', 'journal_draft')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50);
 
       if (feedbacks && feedbacks.length > 0) {
-        pastPatterns = feedbacks
+        // Prioritize same-vendor patterns (vendor_name stored in user_correction_json)
+        const vendorMatches = feedbacks.filter(f => {
+          const corr = f.user_correction_json as Record<string, unknown>;
+          return corr.vendor_name === vendorName;
+        });
+        // Use vendor-specific if available, otherwise fall back to all
+        const selected = vendorMatches.length > 0
+          ? vendorMatches.slice(0, 10)
+          : feedbacks.slice(0, 5); // Fewer fallback items to reduce noise
+
+        pastPatterns = selected
           .map((f, i) => {
             const corr = f.user_correction_json as Record<string, unknown>;
             return `パターン${i + 1}: ${JSON.stringify(corr)}`;
@@ -246,12 +257,18 @@ ${pastPatterns ? `--- 過去の確定パターン（同一取引先） ---\n${pa
       .single();
 
     const highThreshold = settings?.auto_confirm_high ?? 0.90;
+    const midThreshold = settings?.auto_confirm_mid ?? 0.70;
 
     let draftStatus: 'suggested' | 'needs_review';
+    let aiReason = candidates[0]?.reasoning ?? null;
     if (overallConfidence >= highThreshold) {
       draftStatus = 'suggested'; // One-click confirm candidate
+    } else if (overallConfidence >= midThreshold) {
+      draftStatus = 'needs_review';
     } else {
       draftStatus = 'needs_review';
+      // Mark low-confidence drafts for UI distinction (§F-09: 3-tier confidence)
+      aiReason = `[低信頼度] ${aiReason ?? '情報不足のため確認が必要です'}`;
     }
 
     // Step 9: Insert journal_drafts
@@ -263,7 +280,7 @@ ${pastPatterns ? `--- 過去の確定パターン（同一取引先） ---\n${pa
         status: draftStatus,
         candidates_json: candidates as unknown as Record<string, unknown>,
         confidence: overallConfidence,
-        ai_reason: candidates[0]?.reasoning ?? null,
+        ai_reason: aiReason,
         model_version: modelVersion,
       });
 

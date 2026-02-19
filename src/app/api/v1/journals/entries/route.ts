@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
 
-  const roleError = requireRole(result.auth, ['admin', 'accounting']);
+  const roleError = requireRole(result.auth, ['admin', 'accounting', 'viewer']);
   if (roleError) return roleError;
 
   const queryResult = parseQuery(journalEntriesQuerySchema, request.nextUrl.searchParams);

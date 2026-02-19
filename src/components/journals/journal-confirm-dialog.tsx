@@ -119,9 +119,13 @@ export function JournalConfirmDialog({
         if (overrideReason) body.overrideReason = overrideReason;
       }
 
+      const idempotencyKey = `confirm:${draftId}:${selectedIndex}:${Date.now()}`;
       const res = await fetch(`/api/v1/journals/drafts/${draftId}/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify(body),
       });
 

@@ -14,7 +14,7 @@ export async function GET(
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
 
-  const roleError = requireRole(result.auth, ['admin', 'accounting']);
+  const roleError = requireRole(result.auth, ['admin', 'accounting', 'viewer']);
   if (roleError) return roleError;
 
   const { id: draftId } = await params;
