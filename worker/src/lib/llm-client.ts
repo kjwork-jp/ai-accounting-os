@@ -95,3 +95,32 @@ ${input.rawText.slice(0, 4000)}`;
     reasoning: parsed.reasoning ?? '',
   };
 }
+
+export interface SuggestJournalInput {
+  systemPrompt: string;
+  userMessage: string;
+}
+
+/**
+ * Call Claude API for journal entry suggestion.
+ * Returns raw text response — parsing/validation is done by the caller.
+ * Throws on API errors — the caller is responsible for retry/fallback.
+ */
+export async function suggestJournal(
+  input: SuggestJournalInput
+): Promise<string> {
+  const anthropic = getClient();
+
+  const response = await anthropic.messages.create({
+    model: getModel(),
+    max_tokens: 2048,
+    temperature: 0,
+    system: input.systemPrompt,
+    messages: [{ role: 'user', content: input.userMessage }],
+  });
+
+  return response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+}

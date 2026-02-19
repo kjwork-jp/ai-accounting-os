@@ -1,12 +1,17 @@
 import { Worker } from 'bullmq';
 import { processDocumentParse } from './jobs/document-parse';
+import { processInvoiceValidate } from './jobs/invoice-validate';
+import { processJournalSuggest } from './jobs/journal-suggest';
 
 /**
  * Worker entry point for Azure Container Apps Jobs.
- * Consumes the heavy queue (document_parse jobs).
  *
- * Rate limiter: max 15 jobs/sec (Azure DI POST 15TPS limit).
- * Concurrency: 2 (ACA vCPU constraint).
+ * heavy queue: document_parse (OCR/DI)
+ *   Rate limiter: max 15 jobs/sec (Azure DI POST 15TPS limit).
+ *   Concurrency: 2 (ACA vCPU constraint).
+ *
+ * light queue: invoice_validate, journal_suggest
+ *   Concurrency: 4 (CPU-light, I/O-bound tasks).
  */
 
 function getRedisConfig() {
@@ -28,7 +33,7 @@ function getRedisConfig() {
   };
 }
 
-const worker = new Worker(
+const heavyWorker = new Worker(
   'heavy',
   async (job) => {
     if (job.name === 'document_parse') {
@@ -36,7 +41,7 @@ const worker = new Worker(
     } else {
       console.log(JSON.stringify({
         level: 'warn',
-        message: `Unknown job name: ${job.name}`,
+        message: `Unknown heavy job: ${job.name}`,
         jobId: job.id,
         timestamp: new Date().toISOString(),
       }));
@@ -52,38 +57,73 @@ const worker = new Worker(
   }
 );
 
+const lightWorker = new Worker(
+  'light',
+  async (job) => {
+    switch (job.name) {
+      case 'invoice_validate':
+        return processInvoiceValidate(job);
+      case 'journal_suggest':
+        return processJournalSuggest(job);
+      default:
+        console.log(JSON.stringify({
+          level: 'warn',
+          message: `Unknown light job: ${job.name}`,
+          jobId: job.id,
+          timestamp: new Date().toISOString(),
+        }));
+    }
+  },
+  {
+    connection: getRedisConfig(),
+    concurrency: 4,
+  }
+);
+
 // Graceful shutdown
 async function shutdown(signal: string) {
   console.log(JSON.stringify({
     level: 'info',
-    message: `Received ${signal}, shutting down worker...`,
+    message: `Received ${signal}, shutting down workers...`,
     timestamp: new Date().toISOString(),
   }));
-  await worker.close();
+  await Promise.all([heavyWorker.close(), lightWorker.close()]);
   process.exit(0);
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-worker.on('ready', () => {
+heavyWorker.on('ready', () => {
   console.log(JSON.stringify({
     level: 'info',
-    message: 'Worker ready, listening on heavy queue',
+    message: 'Heavy worker ready, listening on heavy queue',
     concurrency: 2,
     rateLimitTps: 15,
     timestamp: new Date().toISOString(),
   }));
 });
 
-worker.on('failed', (job, err) => {
+lightWorker.on('ready', () => {
   console.log(JSON.stringify({
-    level: 'error',
-    message: 'Job failed',
-    jobId: job?.id,
-    jobName: job?.name,
-    attempt: job?.attemptsMade,
-    error: err.message,
+    level: 'info',
+    message: 'Light worker ready, listening on light queue',
+    concurrency: 4,
     timestamp: new Date().toISOString(),
   }));
 });
+
+for (const [name, w] of [['heavy', heavyWorker], ['light', lightWorker]] as const) {
+  w.on('failed', (job, err) => {
+    console.log(JSON.stringify({
+      level: 'error',
+      message: 'Job failed',
+      queue: name,
+      jobId: job?.id,
+      jobName: job?.name,
+      attempt: job?.attemptsMade,
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    }));
+  });
+}

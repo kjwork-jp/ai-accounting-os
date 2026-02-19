@@ -52,11 +52,35 @@ export async function GET(
     .limit(1)
     .single();
 
+  // Fetch journal draft (latest)
+  const { data: journalDraft } = await admin
+    .from('journal_drafts')
+    .select('*')
+    .eq('document_id', documentId)
+    .eq('tenant_id', result.auth.tenantId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  // Fetch journal entry if draft is confirmed
+  let journalEntry = null;
+  if (journalDraft?.status === 'confirmed') {
+    const { data: entry } = await admin
+      .from('journal_entries')
+      .select('*, journal_lines(*)')
+      .eq('journal_draft_id', journalDraft.id)
+      .eq('tenant_id', result.auth.tenantId)
+      .single();
+    journalEntry = entry;
+  }
+
   return ok({
     data: {
       ...doc,
       extraction: extraction ?? null,
       invoice_check: invoiceCheck ?? null,
+      journal_draft: journalDraft ?? null,
+      journal_entry: journalEntry,
     },
   });
 }
