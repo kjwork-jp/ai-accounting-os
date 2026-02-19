@@ -43,16 +43,18 @@ export async function POST(
     );
   }
 
-  // Optimistic update: error → queued
-  const { error: updateError } = await admin
+  // Optimistic update: error → queued (detect 0-row conflict)
+  const { data: updated, error: updateError } = await admin
     .from('documents')
     .update({ status: 'queued' })
     .eq('id', documentId)
     .eq('tenant_id', result.auth.tenantId)
-    .eq('status', 'error'); // Optimistic lock
+    .eq('status', 'error')
+    .select('id')
+    .single();
 
-  if (updateError) {
-    return internalError(`ステータス更新に失敗しました: ${updateError.message}`);
+  if (updateError || !updated) {
+    return conflict('別のリクエストによりステータスが変更されました。ページを再読み込みしてください。');
   }
 
   // Enqueue BullMQ job
