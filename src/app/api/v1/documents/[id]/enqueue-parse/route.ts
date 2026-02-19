@@ -45,7 +45,7 @@ export async function POST(
 
   // Optimistic update: status → queued (detect 0-row conflict)
   const previousStatus = doc.status;
-  const { data: updated, error: updateError } = await admin
+  const { data: updatedDoc, error: updateError } = await admin
     .from('documents')
     .update({ status: 'queued' })
     .eq('id', documentId)
@@ -56,6 +56,10 @@ export async function POST(
 
   if (updateError || !updated) {
     return conflict('別のリクエストによりステータスが変更されました。ページを再読み込みしてください。');
+  }
+
+  if (!updatedDoc) {
+    return conflict('他の処理によりステータスが更新されたため、OCR処理を開始できませんでした。再読み込み後に再実行してください。');
   }
 
   // Enqueue BullMQ job

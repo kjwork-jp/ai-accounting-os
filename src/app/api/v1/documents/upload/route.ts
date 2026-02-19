@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
   const autoParse = request.nextUrl.searchParams.get('auto_parse') === 'true';
   const isOcrTarget = file.type === 'application/pdf' || file.type.startsWith('image/');
   let jobId: string | null = null;
+  let enqueued = false;
 
   if (autoParse && isOcrTarget) {
     try {
@@ -168,18 +169,20 @@ export async function POST(request: NextRequest) {
         documentId: doc.id,
         tenantId: result.auth.tenantId,
       });
-    } catch (err) {
-      // Non-fatal: upload succeeded but enqueue failed — user can manually enqueue later
-      console.log(JSON.stringify({
+      enqueued = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(JSON.stringify({
         level: 'warn',
-        message: 'auto_parse enqueue failed (non-fatal)',
+        route: 'documents/upload',
+        message: 'Auto enqueue failed after upload',
         documentId: doc.id,
         tenantId: result.auth.tenantId,
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
         timestamp: new Date().toISOString(),
       }));
     }
   }
 
-  return ok({ data: { ...doc, jobId } }, 201);
+  return ok({ data: { ...doc, jobId, enqueued } }, 201);
 }

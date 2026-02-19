@@ -95,3 +95,35 @@
 - ただし、運用投入前に以下2点を必須修正とすることを推奨。
   1. documents 系 API の RBAC 強制を仕様どおり実装。
   2. enqueue/retry で「更新件数0件」の競合を検知して 409 を返す。
+
+---
+
+## 9. 再レビュー結果（修正反映後）
+
+- 再レビュー日: 2026-02-19
+- 結論: **前回の High 指摘（RBAC強制不足 / 競合時0件更新未検知）は解消を確認**
+
+### 再確認した範囲
+
+1. `Claude_Code_Document/`（docx/xlsx）を XML 展開し、WBS 3.1・証憑取込・OCR・DI制約関連を再抽出
+2. `docs/` 全 Markdown を再確認
+3. `src/app/api/v1/documents/*`、`src/components/documents/*`、`worker/src/*` を再確認
+4. 4点チェック（lint → typecheck → test → build）を再実行
+
+### 解消を確認した項目
+
+1. **documents 系 API の RBAC 強制（解消）**
+   - `GET /api/v1/documents`, `GET /api/v1/documents/:id`, `GET /api/v1/documents/:id/status` に `requireRole(['admin','accounting','viewer'])` を追加。
+   - `POST /api/v1/documents/upload` に `requireRole(['admin','accounting'])` を追加。
+
+2. **enqueue/retry の競合時ガード（解消）**
+   - `enqueue-parse` / `retry` の status 更新を `select('id').single()` 付き更新に変更し、更新対象 0 件時は `409 conflict` を返却する実装へ改善。
+
+3. **upload auto-parse 失敗時の可観測性（改善）**
+   - auto enqueue 失敗時に warning ログを出力。
+   - upload API レスポンスへ `enqueued` フラグを追加し、クライアント側で状態判定可能に改善。
+
+### 残課題（Medium）
+
+- `src/lib/di/client.ts` と `worker/src/lib/di-client.ts` の重複実装は継続（将来の差分不整合リスク）。
+- SLO 数値（120秒/95%）と一部計画文書の記述（240秒/99%）に差があるため、運用基準の統一が必要。
