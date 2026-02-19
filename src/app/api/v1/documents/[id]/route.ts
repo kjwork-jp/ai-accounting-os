@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, ok, notFound } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, notFound } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 
 /**
@@ -13,6 +13,9 @@ export async function GET(
 ) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
+
+  const roleError = requireRole(result.auth, ['admin', 'accounting', 'viewer']);
+  if (roleError) return roleError;
 
   const { id: documentId } = await params;
   const admin = createAdminSupabase();

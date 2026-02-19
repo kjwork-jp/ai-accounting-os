@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAuth, ok, badRequest, conflict, internalError, getRequestId } from '@/lib/api/helpers';
+import { requireAuth, requireRole, ok, badRequest, conflict, internalError, getRequestId } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
 import { insertAuditLog } from '@/lib/audit/logger';
 import { enqueueDocumentParse } from '@/lib/queue/enqueue';
@@ -25,6 +25,9 @@ const STORAGE_BUCKET = 'documents';
 export async function POST(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
+
+  const roleError = requireRole(result.auth, ['admin', 'accounting']);
+  if (roleError) return roleError;
 
   const requestId = getRequestId(request);
   const idempotencyKey = request.headers.get('idempotency-key');
@@ -152,6 +155,7 @@ export async function POST(request: NextRequest) {
   const autoParse = request.nextUrl.searchParams.get('auto_parse') === 'true';
   const isOcrTarget = file.type === 'application/pdf' || file.type.startsWith('image/');
   let jobId: string | null = null;
+  let enqueued = false;
 
   if (autoParse && isOcrTarget) {
     try {
@@ -165,11 +169,20 @@ export async function POST(request: NextRequest) {
         documentId: doc.id,
         tenantId: result.auth.tenantId,
       });
-    } catch {
-      // Non-fatal: upload succeeded but enqueue failed
-      // User can manually enqueue later
+      enqueued = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(JSON.stringify({
+        level: 'warn',
+        route: 'documents/upload',
+        message: 'Auto enqueue failed after upload',
+        documentId: doc.id,
+        tenantId: result.auth.tenantId,
+        error: message,
+        timestamp: new Date().toISOString(),
+      }));
     }
   }
 
-  return ok({ data: { ...doc, jobId } }, 201);
+  return ok({ data: { ...doc, jobId, enqueued } }, 201);
 }
