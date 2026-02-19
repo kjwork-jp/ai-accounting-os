@@ -27,6 +27,12 @@ export function ExtractionView({ extraction }: ExtractionViewProps) {
     reasoning?: string;
   } | undefined;
 
+  const duplicateSuspects = (json.duplicate_suspects ?? []) as Array<{
+    document_id: string;
+    file_name: string;
+    match_reason: string;
+  }>;
+
   const lineItems = (json.line_items ?? []) as Array<{
     description: string;
     quantity: number | null;
@@ -81,6 +87,27 @@ export function ExtractionView({ extraction }: ExtractionViewProps) {
             {classification.reasoning && (
               <p className="text-muted-foreground text-xs">{classification.reasoning}</p>
             )}
+          </div>
+        )}
+
+        {/* Duplicate warning */}
+        {duplicateSuspects.length > 0 && (
+          <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm space-y-2">
+            <div className="flex items-center gap-2 text-yellow-800 font-medium">
+              重複の可能性がある証憑 ({duplicateSuspects.length}件)
+            </div>
+            <ul className="space-y-1 text-yellow-700">
+              {duplicateSuspects.map((s) => (
+                <li key={s.document_id}>
+                  <a href={`/documents/${s.document_id}`} className="underline hover:text-yellow-900">
+                    {s.file_name}
+                  </a>
+                  <Badge variant="outline" className="ml-2 text-xs">
+                    {s.match_reason === 'date_amount' ? '日付±3日+金額一致' : s.match_reason}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
