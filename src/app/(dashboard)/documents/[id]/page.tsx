@@ -2,6 +2,7 @@ import { redirect, notFound } from 'next/navigation';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase/server';
 import { getCurrentTenantUser } from '@/lib/auth/helpers';
 import { DocumentDetail } from '@/components/documents/document-detail';
+import { DocumentJournalSection } from '@/components/journals/document-journal-section';
 
 interface DocumentDetailPageProps {
   params: Promise<{ id: string }>;
@@ -40,6 +41,28 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
     .limit(1)
     .single();
 
+  // Fetch journal draft
+  const { data: journalDraft } = await admin
+    .from('journal_drafts')
+    .select('*')
+    .eq('document_id', id)
+    .eq('tenant_id', tenantUser.tenant_id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  // Fetch journal entry if confirmed
+  let journalEntry = null;
+  if (journalDraft?.status === 'confirmed') {
+    const { data: entry } = await admin
+      .from('journal_entries')
+      .select('*, journal_lines(*)')
+      .eq('journal_draft_id', journalDraft.id)
+      .eq('tenant_id', tenantUser.tenant_id)
+      .single();
+    journalEntry = entry;
+  }
+
   // Generate signed URL for file preview (60-minute expiry)
   let signedUrl: string | null = null;
   if (doc.storage_bucket && doc.file_key) {
@@ -50,13 +73,23 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
   }
 
   const canRetry = tenantUser.role === 'admin' || tenantUser.role === 'accounting';
+  const canConfirm = tenantUser.role === 'admin' || tenantUser.role === 'accounting';
 
   return (
-    <DocumentDetail
-      document={doc}
-      extraction={extraction ?? null}
-      signedUrl={signedUrl}
-      canRetry={canRetry}
-    />
+    <div className="space-y-6">
+      <DocumentDetail
+        document={doc}
+        extraction={extraction ?? null}
+        signedUrl={signedUrl}
+        canRetry={canRetry}
+      />
+      {journalDraft && (
+        <DocumentJournalSection
+          draft={journalDraft}
+          journalEntry={journalEntry}
+          canConfirm={canConfirm}
+        />
+      )}
+    </div>
   );
 }

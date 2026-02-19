@@ -5,6 +5,7 @@ import { structureExtraction } from './structuring';
 import { classifyExtraction, type ClassificationResult } from './classification';
 import { checkDuplicates, type DuplicateSuspect } from './duplicate-check';
 import { emitMetric, emitLatency, METRIC } from '../lib/metrics';
+import { enqueueInvoiceValidate } from '../lib/enqueue-light';
 
 export interface DocumentParsePayload {
   documentId: string;
@@ -172,6 +173,16 @@ export async function processDocumentParse(
       emitMetric(METRIC.DUPLICATE_CHECK_COUNT, duplicateSuspects.length, { documentId });
     } catch (err) {
       log('warn', 'Duplicate check failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Step 8: Chain → invoice_validate (non-fatal)
+    try {
+      await enqueueInvoiceValidate({ documentId, tenantId });
+      log('info', 'Chained invoice_validate job');
+    } catch (err) {
+      log('warn', 'Failed to enqueue invoice_validate (non-fatal)', {
         error: err instanceof Error ? err.message : String(err),
       });
     }

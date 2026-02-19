@@ -123,6 +123,30 @@ async function resolveEntityName(
         .single();
       return data?.file_name || null;
     }
+    case 'journal_entries': {
+      const { data } = await supabase
+        .from('journal_entries')
+        .select('description, entry_date')
+        .eq('id', entityId)
+        .single();
+      return data?.description || (data?.entry_date ? `仕訳 ${data.entry_date}` : null);
+    }
+    case 'journal_drafts': {
+      const { data } = await supabase
+        .from('journal_drafts')
+        .select('document_id')
+        .eq('id', entityId)
+        .single();
+      if (data?.document_id) {
+        const { data: doc } = await supabase
+          .from('documents')
+          .select('file_name')
+          .eq('id', data.document_id)
+          .single();
+        return doc?.file_name || null;
+      }
+      return null;
+    }
     default:
       return null;
   }

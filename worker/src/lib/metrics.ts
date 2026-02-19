@@ -16,6 +16,14 @@ export const METRIC = {
   OCR_RETRY_COUNT: 'ocr_retry_count',
   CLASSIFICATION_METHOD: 'classification_method',
   DUPLICATE_CHECK_COUNT: 'duplicate_check_count',
+  INVOICE_VALIDATE_SUCCESS: 'invoice_validate_success',
+  INVOICE_VALIDATE_FAILURE: 'invoice_validate_failure',
+  JOURNAL_SUGGEST_LATENCY_MS: 'journal_suggest_latency_ms',
+  JOURNAL_SUGGEST_SUCCESS: 'journal_suggest_success',
+  JOURNAL_SUGGEST_FAILURE: 'journal_suggest_failure',
+  JOURNAL_SUGGEST_CONFIDENCE: 'journal_suggest_confidence',
+  JOURNAL_CONFIRM_COUNT: 'journal_confirm_count',
+  JOURNAL_OVERRIDE_COUNT: 'journal_override_count',
 } as const;
 
 /**
