@@ -101,7 +101,7 @@
 ## 9. 再レビュー結果（修正反映後）
 
 - 再レビュー日: 2026-02-19
-- 結論: **主要指摘は一部未解消。実装は稼働可能だが、運用投入前の是正が必要**
+- 結論: **前回の High 指摘（RBAC強制不足 / 競合時0件更新未検知）は解消を確認**
 
 ### 再確認した範囲
 
@@ -110,21 +110,20 @@
 3. `src/app/api/v1/documents/*`、`src/components/documents/*`、`worker/src/*` を再確認
 4. 4点チェック（lint → typecheck → test → build）を再実行
 
-### 未解消（継続）
+### 解消を確認した項目
 
-1. **documents 系 API の RBAC 強制不足（High）**
-   - `GET /api/v1/documents`, `GET /api/v1/documents/:id`, `GET /api/v1/documents/:id/status`, `POST /api/v1/documents/upload` は `requireAuth` のみで、`requireRole` によるアクセス制御が未実装。
+1. **documents 系 API の RBAC 強制（解消）**
+   - `GET /api/v1/documents`, `GET /api/v1/documents/:id`, `GET /api/v1/documents/:id/status` に `requireRole(['admin','accounting','viewer'])` を追加。
+   - `POST /api/v1/documents/upload` に `requireRole(['admin','accounting'])` を追加。
 
-2. **enqueue/retry の競合時ガード不足（High）**
-   - `.update(...)` 後に「更新件数0件（同時更新で取りこぼし）」を判定しておらず、競合時にジョブ投入を継続する可能性が残る。
+2. **enqueue/retry の競合時ガード（解消）**
+   - `enqueue-parse` / `retry` の status 更新を `select('id').single()` 付き更新に変更し、更新対象 0 件時は `409 conflict` を返却する実装へ改善。
 
-### 改善を確認した点
+3. **upload auto-parse 失敗時の可観測性（改善）**
+   - auto enqueue 失敗時に warning ログを出力。
+   - upload API レスポンスへ `enqueued` フラグを追加し、クライアント側で状態判定可能に改善。
 
-- 4点チェックは再レビュー時点で全て成功。
-- 文書分類・重複検知・メトリクス・retry導線は実装として一貫して動作する設計を維持。
+### 残課題（Medium）
 
-### 追加推奨（再掲）
-
-1. `documents:view` / `documents:upload` の permission string を API レベルで強制。
-2. enqueue/retry の status 更新を `select('id').single()` 付き更新にし、0件更新時は `409 conflict` を返却。
-3. upload API の auto-parse enqueue 失敗時に warning ログと返却メタ情報（`enqueued:false` など）を付与。
+- `src/lib/di/client.ts` と `worker/src/lib/di-client.ts` の重複実装は継続（将来の差分不整合リスク）。
+- SLO 数値（120秒/95%）と一部計画文書の記述（240秒/99%）に差があるため、運用基準の統一が必要。
