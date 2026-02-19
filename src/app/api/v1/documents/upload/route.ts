@@ -20,7 +20,7 @@ const STORAGE_BUCKET = 'documents';
 /**
  * POST /api/v1/documents/upload
  * Upload a document file to Supabase Storage with SHA-256 hashing.
- * Supports Idempotency-Key header to prevent duplicate uploads.
+ * Duplicate detection is handled via SHA-256 hash comparison.
  */
 export async function POST(request: NextRequest) {
   const result = await requireAuth(request);
@@ -30,23 +30,8 @@ export async function POST(request: NextRequest) {
   if (roleError) return roleError;
 
   const requestId = getRequestId(request);
-  const idempotencyKey = request.headers.get('idempotency-key');
 
   const admin = createAdminSupabase();
-
-  // Idempotency check: if same key was used before, return existing document
-  if (idempotencyKey) {
-    const { data: existing } = await admin
-      .from('documents')
-      .select('*')
-      .eq('tenant_id', result.auth.tenantId)
-      .eq('idempotency_key', idempotencyKey)
-      .single();
-
-    if (existing) {
-      return ok({ data: existing, deduplicated: true });
-    }
-  }
 
   // Parse multipart form data
   const formData = await request.formData();
@@ -124,10 +109,6 @@ export async function POST(request: NextRequest) {
     status: 'uploaded',
     uploaded_by: result.auth.userId,
   };
-
-  if (idempotencyKey) {
-    insertData.idempotency_key = idempotencyKey;
-  }
 
   const { data: doc, error: insertError } = await admin
     .from('documents')
