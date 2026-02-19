@@ -61,6 +61,10 @@ export async function POST(
     return conflict('他の処理によりステータスが更新されたため、リトライできませんでした。再読み込み後に再実行してください。');
   }
 
+  if (!updatedDoc) {
+    return conflict('他の処理によりステータスが更新されたため、リトライできませんでした。再読み込み後に再実行してください。');
+  }
+
   // Enqueue BullMQ job
   try {
     const jobId = await enqueueDocumentParse({
