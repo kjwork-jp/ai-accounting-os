@@ -191,11 +191,17 @@ export async function processDocumentParse(
     emitMetric(METRIC.OCR_RETRY_COUNT, job.attemptsMade, { documentId });
   } catch (error) {
     // Update status to error
-    await supabase
+    const { error: errorUpdateErr } = await supabase
       .from('documents')
       .update({ status: 'error' })
       .eq('id', documentId)
       .eq('tenant_id', tenantId);
+
+    if (errorUpdateErr) {
+      log('error', 'Failed to update status to error — document may remain in processing state', {
+        updateError: errorUpdateErr.message,
+      });
+    }
 
     const errorMessage = error instanceof Error ? error.message : String(error);
     const latencyMs = Date.now() - startTime;
