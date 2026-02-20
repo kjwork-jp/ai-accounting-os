@@ -4,10 +4,16 @@
 
 | File | MIME Type | Document Type | Description |
 |------|-----------|---------------|-------------|
-| `invoice-sample.pdf` | `application/pdf` | invoice | Sample invoice (INV-2025-0042, 11,000 JPY) |
-| `receipt-sample.png` | `image/png` | receipt | Sample receipt image (1,661 JPY) |
-| `receipt-sample.jpg` | `image/jpeg` | receipt | Minimal JPEG receipt |
-| `bank-statement-sample.csv` | `text/csv` | bank_statement | Bank transaction statement (10 rows) |
+| `receipt-sample.jpg` | `image/jpeg` | receipt | コンビニレシート（6品 ¥1,134） |
+| `receipt-sample.png` | `image/png` | receipt | 正式な領収書（¥38,500 清掃サービス） |
+| `invoice-sample.pdf` | `application/pdf` | invoice | 請求書 INV-2025-1234（¥269,500） |
+| `bank-statement-sample.csv` | `text/csv` | bank_statement | 銀行取引明細（15行） |
+
+## Regenerating Samples
+
+```bash
+python3 samples/generate_samples.py
+```
 
 ## Upload API Usage
 
