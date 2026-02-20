@@ -93,8 +93,7 @@ $acrBuildOutput = az acr build `
   --resource-group $RESOURCE_GROUP `
   --image "${IMAGE_NAME}:${IMAGE_TAG}" `
   --image "${IMAGE_NAME}:latest" `
-  --file worker/Dockerfile `
-  .
+  worker
 Assert-AzSuccess "ACR build failed"
 Write-Info "Image build & push complete"
 
