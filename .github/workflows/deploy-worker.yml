@@ -1,0 +1,106 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+env:
+  ACR_NAME: acraibostg
+  ACR_LOGIN_SERVER: acraibostg.azurecr.io
+  IMAGE_NAME: worker
+  RESOURCE_GROUP: rg-aibo-stg
+  ACA_APP_NAME: ca-worker-stg
+  ACA_ENV_NAME: cae-aibo-stg
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Login to Azure ---
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # --- Login to ACR ---
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      # --- Build & Push Docker image ---
+      - name: Build & Push
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          docker build \
+            -t ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
+            -t ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest \
+            worker
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      # --- Deploy to ACA (create or update) ---
+      - name: Deploy to Container Apps
+        run: |
+          IMAGE="${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+
+          # Check if app exists
+          if az containerapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.ACA_APP_NAME }} &>/dev/null; then
+
+            echo "Updating existing Container App..."
+            az containerapp update \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --name ${{ env.ACA_APP_NAME }} \
+              --image "${IMAGE}"
+          else
+            echo "Creating new Container App..."
+
+            # Get ACR credentials
+            ACR_USERNAME=$(az acr credential show --name ${{ env.ACR_NAME }} --query "username" -o tsv)
+            ACR_PASSWORD=$(az acr credential show --name ${{ env.ACR_NAME }} --query "passwords[0].value" -o tsv)
+
+            az containerapp create \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --name ${{ env.ACA_APP_NAME }} \
+              --environment ${{ env.ACA_ENV_NAME }} \
+              --image "${IMAGE}" \
+              --registry-server ${{ env.ACR_LOGIN_SERVER }} \
+              --registry-username "${ACR_USERNAME}" \
+              --registry-password "${ACR_PASSWORD}" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --env-vars \
+                "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
+                "SUPABASE_SERVICE_ROLE_KEY=secretref:supabase-service-role-key" \
+                "AZURE_REDIS_HOST=${{ secrets.AZURE_REDIS_HOST }}" \
+                "AZURE_REDIS_PORT=6380" \
+                "AZURE_REDIS_KEY=secretref:azure-redis-key" \
+                "AZURE_DI_ENDPOINT=${{ secrets.AZURE_DI_ENDPOINT }}" \
+                "AZURE_DI_KEY=secretref:azure-di-key" \
+                "ANTHROPIC_API_KEY=secretref:anthropic-api-key" \
+                "LLM_MODEL=${{ secrets.LLM_MODEL }}" \
+              --secrets \
+                "supabase-service-role-key=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                "azure-redis-key=${{ secrets.AZURE_REDIS_KEY }}" \
+                "azure-di-key=${{ secrets.AZURE_DI_KEY }}" \
+                "anthropic-api-key=${{ secrets.ANTHROPIC_API_KEY }}"
+          fi
+
+      # --- Verify ---
+      - name: Verify deployment
+        run: |
+          az containerapp show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.ACA_APP_NAME }} \
+            --query "{name:name, image:properties.template.containers[0].image}" \
+            -o table
