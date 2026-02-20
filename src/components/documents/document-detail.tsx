@@ -108,10 +108,10 @@ export function DocumentDetail({
             </span>
           </div>
         </div>
-        {canRetry && status === 'error' && (
+        {canRetry && (status === 'error' || status === 'queued') && (
           <Button onClick={handleRetry} disabled={retrying} variant="outline">
             <RefreshCw className={`h-4 w-4 mr-2 ${retrying ? 'animate-spin' : ''}`} />
-            再処理
+            {status === 'queued' ? '再キュー' : '再処理'}
           </Button>
         )}
       </div>

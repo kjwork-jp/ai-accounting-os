@@ -6,9 +6,8 @@ import { enqueueDocumentParse } from '@/lib/queue/enqueue';
 
 /**
  * POST /api/v1/documents/:id/retry
- * Retry OCR processing for a failed document.
- * State transition: error → queued (P0-2 compliant)
- * Separate from enqueue-parse for audit trail clarity.
+ * Retry OCR processing for a failed or stuck-queued document.
+ * State transition: error/queued → queued (re-enqueue to Redis)
  */
 export async function POST(
   request: NextRequest,
@@ -36,20 +35,23 @@ export async function POST(
     return notFound('ドキュメントが見つかりません');
   }
 
-  // Precondition: only error status can be retried
-  if (doc.status !== 'error') {
+  // Precondition: only error or queued status can be retried
+  const retryableStatuses = ['error', 'queued'] as const;
+  if (!retryableStatuses.includes(doc.status as typeof retryableStatuses[number])) {
     return conflict(
-      `現在のステータス「${doc.status}」ではリトライできません。エラー状態のドキュメントのみリトライ可能です。`
+      `現在のステータス「${doc.status}」ではリトライできません。エラーまたはキュー待ち状態のドキュメントのみリトライ可能です。`
     );
   }
 
-  // Optimistic update: error → queued
+  const previousStatus = doc.status;
+
+  // Optimistic update: error/queued → queued
   const updateResult = await admin
     .from('documents')
     .update({ status: 'queued' })
     .eq('id', documentId)
     .eq('tenant_id', result.auth.tenantId)
-    .eq('status', 'error') // Optimistic lock
+    .in('status', [...retryableStatuses])
     .select('id')
     .single();
 
@@ -76,7 +78,7 @@ export async function POST(
       entityId: documentId,
       entityName: doc.file_name,
       diffJson: computeDiff(
-        { status: 'error' },
+        { status: previousStatus },
         { status: 'queued' }
       ),
       requestId,
@@ -87,7 +89,7 @@ export async function POST(
     // Rollback status on enqueue failure
     await admin
       .from('documents')
-      .update({ status: 'error' })
+      .update({ status: previousStatus })
       .eq('id', documentId)
       .eq('tenant_id', result.auth.tenantId);
 
