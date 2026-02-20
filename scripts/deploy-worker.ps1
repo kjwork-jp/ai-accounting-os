@@ -88,7 +88,7 @@ Write-Info "Env vars loaded OK"
 
 # === Step 1: Build & push image to ACR ===
 Write-Info "Step 1: ACR remote build ($IMAGE_FULL) ..."
-az acr build `
+$acrBuildOutput = az acr build `
   --registry $ACR_NAME `
   --resource-group $RESOURCE_GROUP `
   --image "${IMAGE_NAME}:${IMAGE_TAG}" `
