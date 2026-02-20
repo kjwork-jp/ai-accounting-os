@@ -50,7 +50,7 @@ export const DOCUMENT_STATUSES = [
 export const documentStatusSchema = z.enum(DOCUMENT_STATUSES);
 
 /** enqueue-parse / retry が受け入れる前提status */
-export const ENQUEUEABLE_STATUSES = ['uploaded', 'error'] as const;
+export const ENQUEUEABLE_STATUSES = ['uploaded', 'queued', 'error'] as const;
 
 // ============================================
 // API クエリパラメータ

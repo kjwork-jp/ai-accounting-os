@@ -150,12 +150,12 @@ export function DocumentList({ filters }: DocumentListProps) {
                   {new Date(doc.created_at).toLocaleDateString('ja-JP')}
                 </TableCell>
                 <TableCell>
-                  {doc.status === 'error' && (
+                  {(doc.status === 'error' || doc.status === 'queued') && (
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={(e) => handleRetry(doc.id, e)}
-                      title="再処理"
+                      title={doc.status === 'queued' ? '再キュー' : '再処理'}
                     >
                       <RefreshCw className="h-4 w-4" />
                     </Button>
