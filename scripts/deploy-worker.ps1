@@ -88,7 +88,7 @@ az acr build `
   --image "${IMAGE_NAME}:${IMAGE_TAG}" `
   --image "${IMAGE_NAME}:latest" `
   --file worker/Dockerfile `
-  .
+  worker
 if ($LASTEXITCODE -ne 0) { Write-Err "ACR build failed." }
 Write-Info "Image build & push complete"
 
