@@ -1,0 +1,11 @@
+node_modules
+.next
+.vercel
+.git
+.github
+.env*
+!.env.example
+docs
+samples
+*.md
+!worker/
