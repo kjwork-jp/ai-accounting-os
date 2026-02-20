@@ -82,14 +82,46 @@ Write-Info "Env vars loaded OK"
 
 # === Step 1: Build & push image to ACR ===
 Write-Info "Step 1: ACR remote build ($IMAGE_FULL) ..."
-az acr build `
+$acrBuildOutput = az acr build `
   --registry $ACR_NAME `
   --resource-group $RESOURCE_GROUP `
   --image "${IMAGE_NAME}:${IMAGE_TAG}" `
   --image "${IMAGE_NAME}:latest" `
   --file worker/Dockerfile `
-  .
-if ($LASTEXITCODE -ne 0) { Write-Err "ACR build failed." }
+  worker 2>&1
+$acrBuildExitCode = $LASTEXITCODE
+$acrBuildOutput | ForEach-Object { Write-Host $_ }
+
+if ($acrBuildExitCode -ne 0) {
+  $buildLog = ($acrBuildOutput | Out-String)
+
+  if ($buildLog -match "TasksOperationsNotAllowed") {
+    Write-Warn "ACR Tasks is not allowed for this registry/subscription. Falling back to local Docker build + push."
+
+    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+    if (-not $dockerCmd) {
+      Write-Err "docker command not found. Enable ACR Tasks or install Docker to continue."
+    }
+
+    Write-Info "Logging in to ACR ..."
+    az acr login --name $ACR_NAME
+    if ($LASTEXITCODE -ne 0) { Write-Err "ACR login failed." }
+
+    Write-Info "Building local Docker image ..."
+    docker build -f worker/Dockerfile -t $IMAGE_FULL -t "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest" worker
+    if ($LASTEXITCODE -ne 0) { Write-Err "Local Docker build failed." }
+
+    Write-Info "Pushing Docker image tags to ACR ..."
+    docker push $IMAGE_FULL
+    if ($LASTEXITCODE -ne 0) { Write-Err "Push failed for tag ${IMAGE_TAG}." }
+
+    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest"
+    if ($LASTEXITCODE -ne 0) { Write-Err "Push failed for tag latest." }
+  }
+  else {
+    Write-Err "ACR build failed."
+  }
+}
 Write-Info "Image build & push complete"
 
 # === Step 2/3: Init or Update ===
