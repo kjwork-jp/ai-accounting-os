@@ -1,22 +1,20 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Azure Container Apps へ Worker をデプロイする。
+  Deploy Worker to Azure Container Apps.
 
 .DESCRIPTION
-  前提:
-    - az CLI ログイン済み (az login)
-    - リソースグループ rg-aibo-stg に ACR / Redis / DI が作成済み
-    - .env.local に必要な環境変数が設定済み
+  Prerequisites:
+    - az CLI logged in (az login)
+    - Resource group rg-aibo-stg with ACR / Redis / DI already created
+    - .env.local with all required environment variables
 
 .PARAMETER Init
-  初回デプロイ時に指定。ACA 環境 + Container App を新規作成する。
+  First-time deploy: create ACA environment + Container App.
 
 .EXAMPLE
-  # 初回デプロイ
   .\scripts\deploy-worker.ps1 -Init
 
-  # コード更新時 (イメージ再ビルド + リビジョン更新のみ)
   .\scripts\deploy-worker.ps1
 #>
 param(
@@ -25,12 +23,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# === 設定 ===
+# === Config ===
 $RESOURCE_GROUP   = "rg-aibo-stg"
 $LOCATION         = "japaneast"
 $ACR_NAME         = "acraibostg"
 $IMAGE_NAME       = "worker"
-$IMAGE_TAG        = if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { Get-Date -Format "yyyyMMdd-HHmmss" }
+$IMAGE_TAG        = $(if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { Get-Date -Format "yyyyMMdd-HHmmss" })
 $IMAGE_FULL       = "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
 
 # Container Apps
@@ -44,20 +42,21 @@ $MEMORY        = "1.0Gi"
 $MIN_REPLICAS  = "1"
 $MAX_REPLICAS  = "1"
 
-# === ヘルパー ===
+# === Helpers ===
 function Write-Info  { param($msg) Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
 function Write-Warn  { param($msg) Write-Host "[WARN]  $msg" -ForegroundColor Yellow }
 function Write-Err   { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red; exit 1 }
 
-# === 環境変数の読み込み (.env.local) ===
-$envFile = if ($env:ENV_FILE) { $env:ENV_FILE } else { ".env.local" }
+# === Load env vars from .env.local ===
+$envFile = $(if ($env:ENV_FILE) { $env:ENV_FILE } else { ".env.local" })
 if (-not (Test-Path $envFile)) {
-  Write-Err "$envFile が見つかりません。Worker に必要な環境変数を設定してください。"
+  Write-Err "$envFile not found. Set required env vars for Worker."
 }
 
 $envVars = @{}
-Get-Content $envFile | ForEach-Object {
-  if ($_ -match "^\s*([A-Z_][A-Z0-9_]*)=(.+)$") {
+Get-Content $envFile -Encoding UTF8 | ForEach-Object {
+  # Match lines like KEY=value (keys are uppercase + underscore + digits)
+  if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)=(.+)$') {
     $envVars[$Matches[1]] = $Matches[2].Trim()
   }
 }
@@ -65,12 +64,12 @@ Get-Content $envFile | ForEach-Object {
 function Get-EnvVar {
   param([string]$Key)
   $val = $envVars[$Key]
-  if (-not $val) { Write-Err "$envFile に $Key が設定されていません。" }
+  if (-not $val) { Write-Err "$Key is not set in $envFile" }
   return $val
 }
 
-Write-Info "環境変数を $envFile から読み込み中..."
-$NEXT_PUBLIC_SUPABASE_URL = Get-EnvVar "NEXT_PUBLIC_SUPABASE_URL"
+Write-Info "Loading env vars from $envFile ..."
+$NEXT_PUBLIC_SUPABASE_URL  = Get-EnvVar "NEXT_PUBLIC_SUPABASE_URL"
 $SUPABASE_SERVICE_ROLE_KEY = Get-EnvVar "SUPABASE_SERVICE_ROLE_KEY"
 $AZURE_REDIS_HOST          = Get-EnvVar "AZURE_REDIS_HOST"
 $AZURE_REDIS_PORT          = Get-EnvVar "AZURE_REDIS_PORT"
@@ -79,10 +78,10 @@ $AZURE_DI_ENDPOINT         = Get-EnvVar "AZURE_DI_ENDPOINT"
 $AZURE_DI_KEY              = Get-EnvVar "AZURE_DI_KEY"
 $ANTHROPIC_API_KEY         = Get-EnvVar "ANTHROPIC_API_KEY"
 $LLM_MODEL                 = Get-EnvVar "LLM_MODEL"
-Write-Info "環境変数の読み込み完了"
+Write-Info "Env vars loaded OK"
 
-# === Step 1: ACR にイメージをビルド & プッシュ ===
-Write-Info "Step 1: ACR リモートビルド ($IMAGE_FULL)..."
+# === Step 1: Build & push image to ACR ===
+Write-Info "Step 1: ACR remote build ($IMAGE_FULL) ..."
 az acr build `
   --registry $ACR_NAME `
   --resource-group $RESOURCE_GROUP `
@@ -90,19 +89,19 @@ az acr build `
   --image "${IMAGE_NAME}:latest" `
   --file worker/Dockerfile `
   .
-if ($LASTEXITCODE -ne 0) { Write-Err "ACR ビルドに失敗しました。" }
-Write-Info "イメージのビルド & プッシュ完了"
+if ($LASTEXITCODE -ne 0) { Write-Err "ACR build failed." }
+Write-Info "Image build & push complete"
 
-# === Step 2/3: 初回 or 更新 ===
+# === Step 2/3: Init or Update ===
 if ($Init) {
-  Write-Info "Step 2: Container Apps 環境を確認中..."
+  Write-Info "Step 2: Checking Container Apps Environment ..."
 
-  # Log Analytics Workspace (既存確認)
+  # Log Analytics Workspace
   $wsExists = az monitor log-analytics workspace show `
     --resource-group $RESOURCE_GROUP `
     --workspace-name $LOG_ANALYTICS_WS 2>$null
   if (-not $wsExists) {
-    Write-Info "Log Analytics Workspace を作成中..."
+    Write-Info "Creating Log Analytics Workspace ..."
     az monitor log-analytics workspace create `
       --resource-group $RESOURCE_GROUP `
       --workspace-name $LOG_ANALYTICS_WS `
@@ -119,12 +118,12 @@ if ($Init) {
     --workspace-name $LOG_ANALYTICS_WS `
     --query primarySharedKey -o tsv
 
-  # Container Apps Environment (既存確認)
+  # Container Apps Environment
   $envExists = az containerapp env show `
     --resource-group $RESOURCE_GROUP `
     --name $ACA_ENV_NAME 2>$null
   if (-not $envExists) {
-    Write-Info "Container Apps Environment を作成中..."
+    Write-Info "Creating Container Apps Environment ..."
     az containerapp env create `
       --resource-group $RESOURCE_GROUP `
       --name $ACA_ENV_NAME `
@@ -132,15 +131,15 @@ if ($Init) {
       --logs-workspace-id $LOG_ID `
       --logs-workspace-key $LOG_KEY
   } else {
-    Write-Info "Container Apps Environment は既に存在します (スキップ)"
+    Write-Info "Container Apps Environment already exists (skip)"
   }
 
-  # ACR 資格情報
+  # ACR credentials
   $ACR_USERNAME = az acr credential show --name $ACR_NAME --query "username" -o tsv
   $ACR_PASSWORD = az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv
 
-  # Container App 作成
-  Write-Info "Step 3: Container App を作成中..."
+  # Create Container App
+  Write-Info "Step 3: Creating Container App ..."
   az containerapp create `
     --resource-group $RESOURCE_GROUP `
     --name $ACA_APP_NAME `
@@ -169,22 +168,22 @@ if ($Init) {
       "azure-di-key=$AZURE_DI_KEY" `
       "anthropic-api-key=$ANTHROPIC_API_KEY"
 
-  if ($LASTEXITCODE -ne 0) { Write-Err "Container App の作成に失敗しました。" }
-  Write-Info "Container App の作成完了"
+  if ($LASTEXITCODE -ne 0) { Write-Err "Container App creation failed." }
+  Write-Info "Container App created"
 
 } else {
-  # 更新デプロイ
-  Write-Info "Step 2: Container App のイメージを更新中..."
+  # Update deploy
+  Write-Info "Step 2: Updating Container App image ..."
   az containerapp update `
     --resource-group $RESOURCE_GROUP `
     --name $ACA_APP_NAME `
     --image $IMAGE_FULL
-  if ($LASTEXITCODE -ne 0) { Write-Err "イメージの更新に失敗しました。" }
-  Write-Info "イメージの更新完了"
+  if ($LASTEXITCODE -ne 0) { Write-Err "Image update failed." }
+  Write-Info "Image update complete"
 }
 
-# === 確認 ===
-Write-Info "デプロイ状態を確認中..."
+# === Verify ===
+Write-Info "Checking deploy status ..."
 az containerapp show `
   --resource-group $RESOURCE_GROUP `
   --name $ACA_APP_NAME `
@@ -192,5 +191,5 @@ az containerapp show `
   -o table
 
 Write-Host ""
-Write-Info "=== デプロイ完了 ==="
-Write-Info "ログ確認: az containerapp logs show -g $RESOURCE_GROUP -n $ACA_APP_NAME --follow"
+Write-Info "=== Deploy complete ==="
+Write-Info "View logs: az containerapp logs show -g $RESOURCE_GROUP -n $ACA_APP_NAME --follow"
