@@ -1,11 +1,9 @@
-node_modules
-.next
-.vercel
-.git
-.github
-.env*
-!.env.example
-docs
-samples
-*.md
-!worker/
+# Ignore everything by default
+*
+
+# Only include what the worker Dockerfile needs
+!worker/Dockerfile
+!worker/package.json
+!worker/pnpm-lock.yaml
+!worker/tsconfig.json
+!worker/src/
