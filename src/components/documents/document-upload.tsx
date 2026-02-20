@@ -89,6 +89,11 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
           throw new Error(body.error?.message ?? `Upload failed (${response.status})`);
         }
 
+        const body = await response.json();
+        if (body.data?.duplicateWarning) {
+          toast.warning(body.data.duplicateWarning);
+        }
+
         setFiles((prev) =>
           prev.map((f, idx) => (idx === i ? { ...f, status: 'done' } : f))
         );
