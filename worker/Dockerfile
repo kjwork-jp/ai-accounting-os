@@ -2,11 +2,11 @@ FROM node:22-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.15.5 --activate
 WORKDIR /app
 
-# Copy worker package files
+# Copy package files (build context = worker/)
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 
-# Copy worker source and shared types
+# Copy source
 COPY tsconfig.json ./
 COPY src/ ./src/
 
