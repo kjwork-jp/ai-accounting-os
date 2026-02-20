@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DocumentStatusBadge } from './document-status-badge';
@@ -28,6 +28,7 @@ interface DocumentData {
   file_size: number | null;
   document_type: DocumentTypeCode;
   status: DocumentStatus;
+  error_message: string | null;
   document_date: string | null;
   amount: number | null;
   tax_amount: number | null;
@@ -109,17 +110,45 @@ export function DocumentDetail({
           </div>
         </div>
         {canRetry && (status === 'error' || status === 'queued') && (
-          <Button onClick={handleRetry} disabled={retrying} variant="outline">
+          <Button
+            onClick={handleRetry}
+            disabled={retrying}
+            variant={status === 'error' ? 'destructive' : 'outline'}
+          >
             <RefreshCw className={`h-4 w-4 mr-2 ${retrying ? 'animate-spin' : ''}`} />
-            {status === 'queued' ? '再キュー' : '再処理'}
+            {retrying ? '処理中...' : status === 'queued' ? '再キュー' : '再処理'}
           </Button>
         )}
       </div>
 
-      {/* Error banner */}
+      {/* Error banner with details */}
       {status === 'error' && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-red-800 text-sm">
-          OCR処理中にエラーが発生しました。再処理ボタンから再実行できます。
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-red-800 text-sm space-y-2">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            OCR処理中にエラーが発生しました
+          </div>
+          {initialDoc.error_message && (
+            <div className="pl-6 text-red-700">
+              <p className="font-medium text-xs text-red-500 mb-1">エラー内容:</p>
+              <p className="font-mono text-xs bg-red-100 rounded px-2 py-1 break-all">
+                {initialDoc.error_message}
+              </p>
+            </div>
+          )}
+          <p className="pl-6 text-xs text-red-600">
+            再処理ボタンから再実行できます。繰り返しエラーになる場合は設定を確認してください。
+          </p>
+        </div>
+      )}
+
+      {/* Queued banner */}
+      {status === 'queued' && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />
+            キュー待ち中です。処理が開始されない場合は「再キュー」ボタンを押してください。
+          </div>
         </div>
       )}
 

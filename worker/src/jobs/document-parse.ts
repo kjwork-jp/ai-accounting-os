@@ -48,7 +48,7 @@ export async function processDocumentParse(
   // Step 1: Optimistic status update: queued → processing
   const { data: doc, error: updateError } = await supabase
     .from('documents')
-    .update({ status: 'processing' })
+    .update({ status: 'processing', error_message: null })
     .eq('id', documentId)
     .eq('tenant_id', tenantId)
     .eq('status', 'queued') // Optimistic lock — only proceed if still queued
@@ -201,10 +201,11 @@ export async function processDocumentParse(
     emitMetric(METRIC.CLASSIFICATION_METHOD, 1, { method: classification.method });
     emitMetric(METRIC.OCR_RETRY_COUNT, job.attemptsMade, { documentId });
   } catch (error) {
-    // Update status to error
+    // Update status to error with message
+    const errorMessage = error instanceof Error ? error.message : String(error);
     const { error: errorUpdateErr } = await supabase
       .from('documents')
-      .update({ status: 'error' })
+      .update({ status: 'error', error_message: errorMessage })
       .eq('id', documentId)
       .eq('tenant_id', tenantId);
 
@@ -214,7 +215,6 @@ export async function processDocumentParse(
       });
     }
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
     const latencyMs = Date.now() - startTime;
 
     log('error', 'Job failed', { error: errorMessage, latencyMs });

@@ -6,6 +6,7 @@ import { RefreshCw } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { DocumentStatusBadge } from './document-status-badge';
+import { toast } from 'sonner';
 import type { DocumentStatus, DocumentTypeCode } from '@/types/database';
 
 const TYPE_LABELS: Record<DocumentTypeCode, string> = {
@@ -45,6 +46,7 @@ export function DocumentList({ filters }: DocumentListProps) {
   const [meta, setMeta] = useState<DocumentListMeta>({ total: 0, page: 1, per_page: 20, total_pages: 0 });
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -87,11 +89,26 @@ export function DocumentList({ filters }: DocumentListProps) {
 
   const handleRetry = async (docId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const res = await fetch(`/api/v1/documents/${docId}/retry`, {
-      method: 'POST',
-    });
-    if (res.ok) {
-      fetchDocuments();
+    setRetryingIds((prev) => new Set(prev).add(docId));
+    try {
+      const res = await fetch(`/api/v1/documents/${docId}/retry`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        toast.success('再処理をキューに投入しました');
+        fetchDocuments();
+      } else {
+        const body = await res.json();
+        toast.error(body.error?.message ?? 'リトライに失敗しました');
+      }
+    } catch {
+      toast.error('リトライに失敗しました');
+    } finally {
+      setRetryingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      });
     }
   };
 
@@ -131,38 +148,42 @@ export function DocumentList({ filters }: DocumentListProps) {
               </TableCell>
             </TableRow>
           ) : (
-            documents.map((doc) => (
-              <TableRow
-                key={doc.id}
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => router.push(`/documents/${doc.id}`)}
-              >
-                <TableCell className="font-medium max-w-[200px] truncate">
-                  {doc.file_name}
-                </TableCell>
-                <TableCell>{TYPE_LABELS[doc.document_type] ?? doc.document_type}</TableCell>
-                <TableCell>{formatDate(doc.document_date)}</TableCell>
-                <TableCell className="text-right">{formatAmount(doc.amount)}</TableCell>
-                <TableCell>
-                  <DocumentStatusBadge status={doc.status} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(doc.created_at).toLocaleDateString('ja-JP')}
-                </TableCell>
-                <TableCell>
-                  {(doc.status === 'error' || doc.status === 'queued') && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => handleRetry(doc.id, e)}
-                      title={doc.status === 'queued' ? '再キュー' : '再処理'}
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))
+            documents.map((doc) => {
+              const isRetrying = retryingIds.has(doc.id);
+              return (
+                <TableRow
+                  key={doc.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/documents/${doc.id}`)}
+                >
+                  <TableCell className="font-medium max-w-[200px] truncate">
+                    {doc.file_name}
+                  </TableCell>
+                  <TableCell>{TYPE_LABELS[doc.document_type] ?? doc.document_type}</TableCell>
+                  <TableCell>{formatDate(doc.document_date)}</TableCell>
+                  <TableCell className="text-right">{formatAmount(doc.amount)}</TableCell>
+                  <TableCell>
+                    <DocumentStatusBadge status={doc.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {new Date(doc.created_at).toLocaleDateString('ja-JP')}
+                  </TableCell>
+                  <TableCell>
+                    {(doc.status === 'error' || doc.status === 'queued') && (
+                      <Button
+                        variant={doc.status === 'error' ? 'destructive' : 'outline'}
+                        size="sm"
+                        disabled={isRetrying}
+                        onClick={(e) => handleRetry(doc.id, e)}
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isRetrying ? 'animate-spin' : ''}`} />
+                        {isRetrying ? '処理中' : doc.status === 'queued' ? '再キュー' : '再処理'}
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
