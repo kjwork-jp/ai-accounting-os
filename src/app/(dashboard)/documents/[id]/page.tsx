@@ -66,9 +66,20 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
   // Generate signed URL for file preview (60-minute expiry)
   let signedUrl: string | null = null;
   if (doc.storage_bucket && doc.file_key) {
-    const { data: signedUrlData } = await admin.storage
+    const { data: signedUrlData, error: signedUrlError } = await admin.storage
       .from(doc.storage_bucket)
       .createSignedUrl(doc.file_key, 3600);
+    if (signedUrlError) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message: 'Failed to create signed URL for document preview',
+        documentId: id,
+        bucket: doc.storage_bucket,
+        fileKey: doc.file_key,
+        error: signedUrlError.message,
+        timestamp: new Date().toISOString(),
+      }));
+    }
     signedUrl = signedUrlData?.signedUrl ?? null;
   }
 

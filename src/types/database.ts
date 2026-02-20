@@ -154,6 +154,7 @@ export interface Document {
   file_hash_sha256: string | null;
   document_type: DocumentTypeCode;
   status: DocumentStatus;
+  error_message: string | null;
   document_date: string | null;
   amount: number | null;
   tax_amount: number | null;
