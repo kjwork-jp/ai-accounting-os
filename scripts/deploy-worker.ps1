@@ -21,7 +21,9 @@ param(
   [switch]$Init
 )
 
-$ErrorActionPreference = "Stop"
+# Use "Continue" globally so az CLI stderr warnings don't become terminating errors.
+# We check $LASTEXITCODE after every az call instead.
+$ErrorActionPreference = "Continue"
 
 # === Config ===
 $RESOURCE_GROUP   = "rg-aibo-stg"
@@ -47,6 +49,11 @@ function Write-Info  { param($msg) Write-Host "[INFO]  $msg" -ForegroundColor Cy
 function Write-Warn  { param($msg) Write-Host "[WARN]  $msg" -ForegroundColor Yellow }
 function Write-Err   { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red; exit 1 }
 
+function Assert-AzSuccess {
+  param([string]$Step)
+  if ($LASTEXITCODE -ne 0) { Write-Err "$Step (exit code: $LASTEXITCODE)" }
+}
+
 # === Load env vars from .env.local ===
 $envFile = $(if ($env:ENV_FILE) { $env:ENV_FILE } else { ".env.local" })
 if (-not (Test-Path $envFile)) {
@@ -55,7 +62,6 @@ if (-not (Test-Path $envFile)) {
 
 $envVars = @{}
 Get-Content $envFile -Encoding UTF8 | ForEach-Object {
-  # Match lines like KEY=value (keys are uppercase + underscore + digits)
   if ($_ -match '^\s*([A-Z_][A-Z0-9_]*)=(.+)$') {
     $envVars[$Matches[1]] = $Matches[2].Trim()
   }
@@ -88,40 +94,8 @@ $acrBuildOutput = az acr build `
   --image "${IMAGE_NAME}:${IMAGE_TAG}" `
   --image "${IMAGE_NAME}:latest" `
   --file worker/Dockerfile `
-  worker 2>&1
-$acrBuildExitCode = $LASTEXITCODE
-$acrBuildOutput | ForEach-Object { Write-Host $_ }
-
-if ($acrBuildExitCode -ne 0) {
-  $buildLog = ($acrBuildOutput | Out-String)
-
-  if ($buildLog -match "TasksOperationsNotAllowed") {
-    Write-Warn "ACR Tasks is not allowed for this registry/subscription. Falling back to local Docker build + push."
-
-    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
-    if (-not $dockerCmd) {
-      Write-Err "docker command not found. Enable ACR Tasks or install Docker to continue."
-    }
-
-    Write-Info "Logging in to ACR ..."
-    az acr login --name $ACR_NAME
-    if ($LASTEXITCODE -ne 0) { Write-Err "ACR login failed." }
-
-    Write-Info "Building local Docker image ..."
-    docker build -f worker/Dockerfile -t $IMAGE_FULL -t "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest" worker
-    if ($LASTEXITCODE -ne 0) { Write-Err "Local Docker build failed." }
-
-    Write-Info "Pushing Docker image tags to ACR ..."
-    docker push $IMAGE_FULL
-    if ($LASTEXITCODE -ne 0) { Write-Err "Push failed for tag ${IMAGE_TAG}." }
-
-    docker push "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:latest"
-    if ($LASTEXITCODE -ne 0) { Write-Err "Push failed for tag latest." }
-  }
-  else {
-    Write-Err "ACR build failed."
-  }
-}
+  .
+Assert-AzSuccess "ACR build failed"
 Write-Info "Image build & push complete"
 
 # === Step 2/3: Init or Update ===
@@ -129,16 +103,17 @@ if ($Init) {
   Write-Info "Step 2: Checking Container Apps Environment ..."
 
   # Log Analytics Workspace
-  $wsExists = az monitor log-analytics workspace show `
+  az monitor log-analytics workspace show `
     --resource-group $RESOURCE_GROUP `
-    --workspace-name $LOG_ANALYTICS_WS 2>$null
-  if (-not $wsExists) {
+    --workspace-name $LOG_ANALYTICS_WS 2>$null | Out-Null
+  if ($LASTEXITCODE -ne 0) {
     Write-Info "Creating Log Analytics Workspace ..."
     az monitor log-analytics workspace create `
       --resource-group $RESOURCE_GROUP `
       --workspace-name $LOG_ANALYTICS_WS `
       --location $LOCATION `
       --retention-in-days 30
+    Assert-AzSuccess "Log Analytics Workspace creation failed"
   }
 
   $LOG_ID = az monitor log-analytics workspace show `
@@ -151,10 +126,10 @@ if ($Init) {
     --query primarySharedKey -o tsv
 
   # Container Apps Environment
-  $envExists = az containerapp env show `
+  az containerapp env show `
     --resource-group $RESOURCE_GROUP `
-    --name $ACA_ENV_NAME 2>$null
-  if (-not $envExists) {
+    --name $ACA_ENV_NAME 2>$null | Out-Null
+  if ($LASTEXITCODE -ne 0) {
     Write-Info "Creating Container Apps Environment ..."
     az containerapp env create `
       --resource-group $RESOURCE_GROUP `
@@ -162,12 +137,14 @@ if ($Init) {
       --location $LOCATION `
       --logs-workspace-id $LOG_ID `
       --logs-workspace-key $LOG_KEY
+    Assert-AzSuccess "Container Apps Environment creation failed"
   } else {
     Write-Info "Container Apps Environment already exists (skip)"
   }
 
   # ACR credentials
   $ACR_USERNAME = az acr credential show --name $ACR_NAME --query "username" -o tsv
+  Assert-AzSuccess "ACR credential fetch failed"
   $ACR_PASSWORD = az acr credential show --name $ACR_NAME --query "passwords[0].value" -o tsv
 
   # Create Container App
@@ -199,8 +176,7 @@ if ($Init) {
       "azure-redis-key=$AZURE_REDIS_KEY" `
       "azure-di-key=$AZURE_DI_KEY" `
       "anthropic-api-key=$ANTHROPIC_API_KEY"
-
-  if ($LASTEXITCODE -ne 0) { Write-Err "Container App creation failed." }
+  Assert-AzSuccess "Container App creation failed"
   Write-Info "Container App created"
 
 } else {
@@ -210,7 +186,7 @@ if ($Init) {
     --resource-group $RESOURCE_GROUP `
     --name $ACA_APP_NAME `
     --image $IMAGE_FULL
-  if ($LASTEXITCODE -ne 0) { Write-Err "Image update failed." }
+  Assert-AzSuccess "Image update failed"
   Write-Info "Image update complete"
 }
 
