@@ -63,25 +63,8 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
     journalEntry = entry;
   }
 
-  // Generate signed URL for file preview (60-minute expiry)
-  let signedUrl: string | null = null;
-  if (doc.storage_bucket && doc.file_key) {
-    const { data: signedUrlData, error: signedUrlError } = await admin.storage
-      .from(doc.storage_bucket)
-      .createSignedUrl(doc.file_key, 3600);
-    if (signedUrlError) {
-      console.error(JSON.stringify({
-        level: 'error',
-        message: 'Failed to create signed URL for document preview',
-        documentId: id,
-        bucket: doc.storage_bucket,
-        fileKey: doc.file_key,
-        error: signedUrlError.message,
-        timestamp: new Date().toISOString(),
-      }));
-    }
-    signedUrl = signedUrlData?.signedUrl ?? null;
-  }
+  // Use preview API endpoint instead of signed URL to avoid storage policy issues
+  const previewUrl = `/api/v1/documents/${id}/preview`;
 
   const canRetry = tenantUser.role === 'admin' || tenantUser.role === 'accounting';
   const canConfirm = tenantUser.role === 'admin' || tenantUser.role === 'accounting';
@@ -91,7 +74,7 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
       <DocumentDetail
         document={doc}
         extraction={extraction ?? null}
-        signedUrl={signedUrl}
+        previewUrl={previewUrl}
         canRetry={canRetry}
       />
       {journalDraft && (

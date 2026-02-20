@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   const buffer = Buffer.from(arrayBuffer);
   const sha256Hash = createHash('sha256').update(buffer).digest('hex');
 
-  // Check for duplicate by hash within the same tenant
+  // Check for duplicate by hash within the same tenant (warn, don't block)
   const { data: duplicate } = await admin
     .from('documents')
     .select('id, file_name')
@@ -65,11 +65,9 @@ export async function POST(request: NextRequest) {
     .limit(1)
     .single();
 
-  if (duplicate) {
-    return conflict(
-      `同一ファイルが既に登録されています: ${duplicate.file_name} (ID: ${duplicate.id})`
-    );
-  }
+  const duplicateWarning = duplicate
+    ? `同一ファイルが既に登録されています: ${duplicate.file_name} (ID: ${duplicate.id})`
+    : null;
 
   // Generate storage key: tenant_id/YYYY-MM/uuid_filename
   const now = new Date();
@@ -165,5 +163,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return ok({ data: { ...doc, jobId, enqueued } }, 201);
+  return ok({ data: { ...doc, jobId, enqueued, duplicateWarning } }, 201);
 }

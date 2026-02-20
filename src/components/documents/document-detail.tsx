@@ -50,14 +50,14 @@ interface ExtractionData {
 interface DocumentDetailProps {
   document: DocumentData;
   extraction: ExtractionData | null;
-  signedUrl: string | null;
+  previewUrl: string | null;
   canRetry: boolean;
 }
 
 export function DocumentDetail({
   document: initialDoc,
   extraction,
-  signedUrl,
+  previewUrl,
   canRetry,
 }: DocumentDetailProps) {
   const router = useRouter();
@@ -161,7 +161,7 @@ export function DocumentDetail({
           </CardHeader>
           <CardContent>
             <DocumentPreview
-              signedUrl={signedUrl}
+              previewUrl={previewUrl}
               mimeType={initialDoc.mime_type}
               fileName={initialDoc.file_name}
             />

@@ -3,13 +3,13 @@
 import { FileText, ImageIcon } from 'lucide-react';
 
 interface DocumentPreviewProps {
-  signedUrl: string | null;
+  previewUrl: string | null;
   mimeType: string | null;
   fileName: string;
 }
 
-export function DocumentPreview({ signedUrl, mimeType, fileName }: DocumentPreviewProps) {
-  if (!signedUrl) {
+export function DocumentPreview({ previewUrl, mimeType, fileName }: DocumentPreviewProps) {
+  if (!previewUrl) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
         <FileText className="h-12 w-12 mb-2" />
@@ -22,7 +22,7 @@ export function DocumentPreview({ signedUrl, mimeType, fileName }: DocumentPrevi
   if (mimeType === 'application/pdf') {
     return (
       <iframe
-        src={signedUrl}
+        src={previewUrl}
         className="w-full h-[600px] rounded border"
         title={`Preview of ${fileName}`}
       />
@@ -35,7 +35,7 @@ export function DocumentPreview({ signedUrl, mimeType, fileName }: DocumentPrevi
       <div className="flex items-center justify-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={signedUrl}
+          src={previewUrl}
           alt={`Preview of ${fileName}`}
           className="max-w-full max-h-[600px] rounded border object-contain"
         />
