@@ -37,7 +37,17 @@ interface DocumentListMeta {
 }
 
 interface DocumentListProps {
-  filters?: { status?: string; document_type?: string; q?: string };
+  filters?: {
+    status?: string;
+    document_type?: string;
+    q?: string;
+    date_from?: string;
+    date_to?: string;
+    amount_min?: string;
+    amount_max?: string;
+    registration_number?: string;
+    partner_name?: string;
+  };
 }
 
 export function DocumentList({ filters }: DocumentListProps) {
@@ -55,6 +65,12 @@ export function DocumentList({ filters }: DocumentListProps) {
     if (filters?.status) params.set('status', filters.status);
     if (filters?.document_type) params.set('document_type', filters.document_type);
     if (filters?.q) params.set('q', filters.q);
+    if (filters?.date_from) params.set('date_from', filters.date_from);
+    if (filters?.date_to) params.set('date_to', filters.date_to);
+    if (filters?.amount_min) params.set('amount_min', filters.amount_min);
+    if (filters?.amount_max) params.set('amount_max', filters.amount_max);
+    if (filters?.registration_number) params.set('registration_number', filters.registration_number);
+    if (filters?.partner_name) params.set('partner_name', filters.partner_name);
 
     const res = await fetch(`/api/v1/documents?${params.toString()}`);
     if (!res.ok) return;

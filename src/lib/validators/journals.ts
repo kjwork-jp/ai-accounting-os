@@ -21,6 +21,8 @@ export const journalEntriesQuerySchema = z.object({
   source_type: z.enum(['document', 'order', 'invoice', 'manual']).optional(),
   date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  account_code: z.string().max(10).optional(),
+  keyword: z.string().max(200).optional(),
 });
 
 // POST /journals/drafts/:id/confirm request body

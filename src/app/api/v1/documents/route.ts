@@ -59,6 +59,14 @@ export async function GET(request: NextRequest) {
   if (query.q) {
     dbQuery = dbQuery.ilike('file_name', `%${query.q}%`);
   }
+  // 電帳法6キー検索: 登録番号 (WBS 3.6.1 CMN-010)
+  if (query.registration_number) {
+    dbQuery = dbQuery.ilike('registration_number', `%${query.registration_number}%`);
+  }
+  // 電帳法6キー検索: 取引先名 (counterparty or partner name)
+  if (query.partner_name) {
+    dbQuery = dbQuery.ilike('counterparty_name', `%${query.partner_name}%`);
+  }
 
   // Sorting
   const ascending = query.sort_order === 'asc';
