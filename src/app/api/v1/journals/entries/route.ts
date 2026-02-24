@@ -18,8 +18,25 @@ export async function GET(request: NextRequest) {
   const queryResult = parseQuery(journalEntriesQuerySchema, request.nextUrl.searchParams);
   if ('error' in queryResult) return queryResult.error;
 
-  const { page, per_page, status, source_type, date_from, date_to } = queryResult.data;
+  const { page, per_page, status, source_type, date_from, date_to, account_code, keyword } = queryResult.data;
   const admin = createAdminSupabase();
+
+  // When filtering by account_code, we need to find entries with matching journal_lines
+  let entryIds: string[] | null = null;
+  if (account_code) {
+    const { data: matchingLines } = await admin
+      .from('journal_lines')
+      .select('journal_entry_id')
+      .eq('tenant_id', result.auth.tenantId)
+      .eq('account_code', account_code);
+    entryIds = [...new Set(matchingLines?.map(l => l.journal_entry_id) ?? [])];
+    if (entryIds.length === 0) {
+      return ok({
+        data: [],
+        pagination: { page, per_page, total: 0, total_pages: 0 },
+      });
+    }
+  }
 
   let query = admin
     .from('journal_entries')
@@ -39,6 +56,12 @@ export async function GET(request: NextRequest) {
   }
   if (date_to) {
     query = query.lte('entry_date', date_to);
+  }
+  if (keyword) {
+    query = query.ilike('description', `%${keyword}%`);
+  }
+  if (entryIds) {
+    query = query.in('id', entryIds);
   }
 
   const { data, error, count } = await query;

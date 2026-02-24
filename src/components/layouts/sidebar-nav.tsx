@@ -14,6 +14,9 @@ import {
   Users,
   ClipboardList,
   Settings,
+  CreditCard,
+  FileSpreadsheet,
+  Table2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types/database';
@@ -33,6 +36,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: '発注', href: '/purchase-orders', icon: Package, roles: ['admin', 'accounting'] },
   { label: '請求書', href: '/invoices', icon: Receipt, roles: ['admin', 'accounting', 'sales'] },
   { label: '決裁', href: '/approvals', icon: CheckSquare },
+  { label: '帳簿・レポート', href: '/reports', icon: Table2, roles: ['admin', 'accounting', 'viewer'] },
+  { label: '明細取込・突合', href: '/payments', icon: CreditCard, roles: ['admin', 'accounting'] },
+  { label: '会計CSV取込', href: '/imports', icon: FileSpreadsheet, roles: ['admin', 'accounting'] },
   { label: '経営分析', href: '/analytics', icon: BarChart3, roles: ['admin', 'accounting', 'viewer'] },
   { label: '取引先', href: '/partners', icon: Users, roles: ['admin', 'accounting', 'viewer'] },
   { label: '監査ログ', href: '/audit-logs', icon: ClipboardList, roles: ['admin', 'accounting'] },

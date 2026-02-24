@@ -66,6 +66,9 @@ export const documentsListQuerySchema = z.object({
   amount_min: z.coerce.number().min(0).optional(),
   amount_max: z.coerce.number().min(0).optional(),
   q: z.string().max(200).optional(),
+  // 電帳法6キー検索追加パラメータ (WBS 3.6.1 CMN-010)
+  registration_number: z.string().max(20).optional(),
+  partner_name: z.string().max(200).optional(),
   sort_by: z.enum(['created_at', 'document_date', 'amount']).default('created_at'),
   sort_order: z.enum(['asc', 'desc']).default('desc'),
 });
