@@ -98,36 +98,57 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminSupabase();
   let imported = 0;
-  let failed = 0;
+  let skipped = 0;
 
-  for (const row of parseResult.rows) {
-    // Create journal entry
-    const { data: entry, error: entryError } = await admin
+  // Validate debit=credit balance before import
+  const validRows = parseResult.rows.filter((row, idx) => {
+    if (!row.debit_account_code || !row.credit_account_code) {
+      parseResult.errors.push(`行${idx + 2}: 借方・貸方の両方の勘定科目が必要です`);
+      return false;
+    }
+    if (row.debit_amount !== row.credit_amount) {
+      parseResult.errors.push(`行${idx + 2}: 借方金額(${row.debit_amount})と貸方金額(${row.credit_amount})が一致しません`);
+      return false;
+    }
+    return true;
+  });
+  skipped = parseResult.rows.length - validRows.length;
+
+  // Batch insert entries (chunks of 100 to avoid payload limits)
+  const BATCH_SIZE = 100;
+  for (let batchStart = 0; batchStart < validRows.length; batchStart += BATCH_SIZE) {
+    const batch = validRows.slice(batchStart, batchStart + BATCH_SIZE);
+
+    const entryPayloads = batch.map((row) => ({
+      tenant_id: result.auth.tenantId,
+      entry_date: row.date,
+      description: row.description,
+      source_type: 'manual' as const,
+      status: 'confirmed' as const,
+      total_amount: row.debit_amount,
+      tax_amount: 0,
+      created_by: result.auth.userId,
+    }));
+
+    const { data: entries, error: entryError } = await admin
       .from('journal_entries')
-      .insert({
-        tenant_id: result.auth.tenantId,
-        entry_date: row.date,
-        description: row.description,
-        source_type: 'manual',
-        status: 'confirmed', // CSV imports are pre-confirmed
-        total_amount: Math.max(row.debit_amount, row.credit_amount),
-        tax_amount: 0,
-        created_by: result.auth.userId,
-      })
-      .select('id')
-      .single();
+      .insert(entryPayloads)
+      .select('id');
 
-    if (entryError || !entry) {
-      failed++;
+    if (entryError || !entries) {
+      console.error('[accounting-csv-import] Batch entry insert error:', entryError?.message);
       continue;
     }
 
-    // Create journal lines
-    const lines = [];
-    if (row.debit_account_code && row.debit_amount > 0) {
-      lines.push({
+    // Build journal lines for all entries in this batch
+    const allLines: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < entries.length; i++) {
+      const row = batch[i];
+      const entryId = entries[i].id;
+
+      allLines.push({
         tenant_id: result.auth.tenantId,
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         line_no: 1,
         account_code: row.debit_account_code,
         account_name: row.debit_account_code,
@@ -135,11 +156,9 @@ export async function POST(request: NextRequest) {
         credit: 0,
         tax_code: row.tax_code,
       });
-    }
-    if (row.credit_account_code && row.credit_amount > 0) {
-      lines.push({
+      allLines.push({
         tenant_id: result.auth.tenantId,
-        journal_entry_id: entry.id,
+        journal_entry_id: entryId,
         line_no: 2,
         account_code: row.credit_account_code,
         account_name: row.credit_account_code,
@@ -149,17 +168,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (lines.length > 0) {
+    if (allLines.length > 0) {
       const { error: lineError } = await admin
         .from('journal_lines')
-        .insert(lines);
+        .insert(allLines);
 
       if (lineError) {
-        console.error('[accounting-csv-import] Line insert error:', lineError.message);
+        console.error('[accounting-csv-import] Batch line insert error:', lineError.message);
       }
     }
 
-    imported++;
+    imported += entries.length;
   }
 
   // Audit log
@@ -172,7 +191,7 @@ export async function POST(request: NextRequest) {
     diffJson: {
       template: { before: null, after: template },
       imported: { before: null, after: imported },
-      failed: { before: null, after: failed },
+      skipped: { before: null, after: skipped },
       total_rows: { before: null, after: parseResult.rows.length },
     },
     requestId: getRequestId(request),
@@ -181,7 +200,7 @@ export async function POST(request: NextRequest) {
   return ok({
     data: {
       imported,
-      failed,
+      skipped,
       total_rows: parseResult.rows.length,
       parse_errors: parseResult.errors.slice(0, 10),
     },

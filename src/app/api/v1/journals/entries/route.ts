@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, requireRole, ok, parseQuery, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
+import { escapeIlike } from '@/lib/supabase/escape';
 import { journalEntriesQuerySchema } from '@/lib/validators/journals';
 
 /**
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     query = query.lte('entry_date', date_to);
   }
   if (keyword) {
-    query = query.ilike('description', `%${keyword}%`);
+    query = query.ilike('description', `%${escapeIlike(keyword)}%`);
   }
   if (entryIds) {
     query = query.in('id', entryIds);

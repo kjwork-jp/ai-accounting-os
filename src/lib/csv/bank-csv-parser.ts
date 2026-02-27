@@ -5,6 +5,8 @@
  * See WBS 3.4.1 銀行CSV取込 / ACC-002.
  */
 
+import { parseCsvLine, extractCounterpartyName } from './csv-utils';
+
 export interface ParsedPaymentRow {
   occurred_on: string; // YYYY-MM-DD
   description: string;
@@ -80,7 +82,7 @@ export function parseCreditCardCsv(content: string): CsvParseResult {
       description,
       amount: Math.abs(amount),
       direction: 'out', // Credit card is always outgoing
-      counterparty_name_raw: description,
+      counterparty_name_raw: extractCounterpartyName(description),
     });
   }
 
@@ -159,37 +161,11 @@ function parseGenericBankFormat(lines: string[], errors: string[]): CsvParseResu
       amount,
       direction,
       balance,
-      counterparty_name_raw: description,
+      counterparty_name_raw: extractCounterpartyName(description),
     });
   }
 
   return { rows, format_detected: 'bank_generic', errors };
-}
-
-/** Parse a single CSV line respecting quoted fields. */
-function parseCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current);
-  return fields;
 }
 
 /** Parse various Japanese date formats to YYYY-MM-DD. */

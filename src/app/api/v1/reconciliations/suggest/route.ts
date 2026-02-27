@@ -92,10 +92,38 @@ export async function POST(request: NextRequest) {
     unreconciledEntries
   );
 
-  // Insert suggestions into reconciliations table
-  let created = 0;
+  // Upsert suggestions into reconciliations table (idempotent: skip existing pairs)
+  let createdCount = 0;
+  const suggestionsWithIds: Array<{
+    reconciliation_id: string;
+    payment_id: string;
+    target_type: string;
+    target_id: string;
+    confidence: number;
+    match_reasons: string[];
+  }> = [];
+
   for (const candidate of candidates) {
-    const { error } = await admin
+    // Check for existing suggested reconciliation for this pair
+    const { data: existing } = await admin
+      .from('reconciliations')
+      .select('id')
+      .eq('tenant_id', result.auth.tenantId)
+      .eq('payment_id', candidate.payment_id)
+      .eq('target_id', candidate.target_id)
+      .in('status', ['suggested', 'confirmed'])
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      // Already exists — reuse existing reconciliation ID
+      suggestionsWithIds.push({
+        reconciliation_id: existing[0].id,
+        ...candidate,
+      });
+      continue;
+    }
+
+    const { data: inserted, error } = await admin
       .from('reconciliations')
       .insert({
         tenant_id: result.auth.tenantId,
@@ -105,9 +133,17 @@ export async function POST(request: NextRequest) {
         confidence: candidate.confidence,
         status: 'suggested',
         match_reasons: candidate.match_reasons,
-      });
+      })
+      .select('id')
+      .single();
 
-    if (!error) created++;
+    if (!error && inserted) {
+      createdCount++;
+      suggestionsWithIds.push({
+        reconciliation_id: inserted.id,
+        ...candidate,
+      });
+    }
   }
 
   // Audit log
@@ -120,19 +156,19 @@ export async function POST(request: NextRequest) {
     diffJson: {
       period: { before: null, after: `${date_from} ~ ${date_to}` },
       candidates_found: { before: null, after: candidates.length },
-      created: { before: null, after: created },
+      created: { before: null, after: createdCount },
     },
     requestId: getRequestId(request),
   });
 
   return ok({
     data: {
-      suggestions: candidates,
+      suggestions: suggestionsWithIds,
       summary: {
         total_unreconciled_payments: unreconciledPayments.length,
         total_unreconciled_entries: unreconciledEntries.length,
-        matched: candidates.length,
-        unmatched_payments: unreconciledPayments.length - candidates.length,
+        matched: suggestionsWithIds.length,
+        unmatched_payments: unreconciledPayments.length - suggestionsWithIds.length,
       },
     },
   });

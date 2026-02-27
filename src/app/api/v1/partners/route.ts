@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, requireRole, ok, created, parseBody, parseQuery, internalError, conflict, getRequestId } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
+import { escapeFilterValue } from '@/lib/supabase/escape';
 import { partnersQuerySchema, partnerCreateSchema } from '@/lib/validators/partners';
 import { insertAuditLog } from '@/lib/audit/logger';
 import { findSimilarPartners } from '@/lib/partners/name-matching';
@@ -32,7 +33,8 @@ export async function GET(request: NextRequest) {
     .range((page - 1) * per_page, page * per_page - 1);
 
   if (search) {
-    query = query.or(`name.ilike.%${search}%,name_kana.ilike.%${search}%`);
+    const escaped = escapeFilterValue(search);
+    query = query.or(`name.ilike.%${escaped}%,name_kana.ilike.%${escaped}%`);
   }
   if (category) {
     query = query.eq('category', category);
@@ -118,16 +120,17 @@ export async function POST(request: NextRequest) {
     return internalError(`取引先の作成に失敗しました: ${error.message}`);
   }
 
-  // Check for similar partners (name matching warning)
-  const { data: allPartners } = await admin
+  // Check for similar partners (name matching warning) — limit to 200 for performance
+  const { data: candidatePartners } = await admin
     .from('partners')
     .select('id, name')
     .eq('tenant_id', result.auth.tenantId)
     .is('merged_into_id', null)
-    .neq('id', data.id);
+    .neq('id', data.id)
+    .limit(200);
 
-  const similarPartners = allPartners
-    ? findSimilarPartners(parsed.data.name, allPartners)
+  const similarPartners = candidatePartners
+    ? findSimilarPartners(parsed.data.name, candidatePartners)
     : [];
 
   // Audit log

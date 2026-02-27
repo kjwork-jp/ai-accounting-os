@@ -8,13 +8,13 @@ import { generateStandardCsv, generateYayoiCsv } from '@/lib/csv/journal-export'
  * GET /api/v1/journals/export
  * Export confirmed journal entries as CSV.
  * Supports standard and yayoi (弥生会計) formats.
- * Requires: journals:view (admin, accounting)
+ * Requires: journals:view (admin, accounting, viewer)
  */
 export async function GET(request: NextRequest) {
   const result = await requireAuth(request);
   if ('error' in result) return result.error;
 
-  const roleError = requireRole(result.auth, ['admin', 'accounting']);
+  const roleError = requireRole(result.auth, ['admin', 'accounting', 'viewer']);
   if (roleError) return roleError;
 
   const queryResult = parseQuery(journalExportQuerySchema, request.nextUrl.searchParams);

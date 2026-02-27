@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, requireRole, ok, badRequest, internalError } from '@/lib/api/helpers';
 import { createAdminSupabase } from '@/lib/supabase/server';
+import { escapeIlike } from '@/lib/supabase/escape';
 import { documentsListQuerySchema } from '@/lib/validators/documents';
 
 /**
@@ -57,15 +58,15 @@ export async function GET(request: NextRequest) {
     dbQuery = dbQuery.lte('amount', query.amount_max);
   }
   if (query.q) {
-    dbQuery = dbQuery.ilike('file_name', `%${query.q}%`);
+    dbQuery = dbQuery.ilike('file_name', `%${escapeIlike(query.q)}%`);
   }
   // 電帳法6キー検索: 登録番号 (WBS 3.6.1 CMN-010)
   if (query.registration_number) {
-    dbQuery = dbQuery.ilike('registration_number', `%${query.registration_number}%`);
+    dbQuery = dbQuery.ilike('registration_number', `%${escapeIlike(query.registration_number)}%`);
   }
   // 電帳法6キー検索: 取引先名 (counterparty or partner name)
   if (query.partner_name) {
-    dbQuery = dbQuery.ilike('counterparty_name', `%${query.partner_name}%`);
+    dbQuery = dbQuery.ilike('counterparty_name', `%${escapeIlike(query.partner_name)}%`);
   }
 
   // Sorting

@@ -5,6 +5,7 @@
  */
 
 import type { ColumnMapping, AccountingCsvTemplate } from '@/lib/validators/imports';
+import { parseCsvLine } from './csv-utils';
 
 export interface ParsedJournalRow {
   date: string; // YYYY-MM-DD
@@ -101,10 +102,13 @@ export function parseAccountingCsv(
 
     if (isFreee) {
       // freee format: single line with account + amount + direction (収支区分 column 6)
+      // freee uses a single-entry style; we generate the counter-account as a default settlement account.
       const accountCode = fields[mapping.debit_account]?.trim() || '';
       const amount = parseNumber(fields[mapping.debit_amount]);
       const taxCode = mapping.tax_code !== undefined ? fields[mapping.tax_code]?.trim() || null : null;
       const direction = fields[6]?.trim(); // 収支区分: 収入 or 支出
+      // freee column 4 is the settlement account (決済口座); fallback to generic cash account
+      const settlementAccount = fields[4]?.trim() || 'CASH';
 
       if (amount === null || !accountCode) continue;
 
@@ -114,7 +118,7 @@ export function parseAccountingCsv(
           description,
           debit_account_code: accountCode,
           debit_amount: amount,
-          credit_account_code: '',
+          credit_account_code: settlementAccount,
           credit_amount: amount,
           tax_code: normalizeTaxCode(taxCode),
         });
@@ -122,7 +126,7 @@ export function parseAccountingCsv(
         rows.push({
           date,
           description,
-          debit_account_code: '',
+          debit_account_code: settlementAccount,
           debit_amount: amount,
           credit_account_code: accountCode,
           credit_amount: amount,
@@ -157,31 +161,6 @@ export function parseAccountingCsv(
   return { rows, headers, preview, errors };
 }
 
-function parseCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current);
-  return fields;
-}
-
 function parseDate(raw: string): string | null {
   if (!raw) return null;
   let m = raw.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
@@ -201,10 +180,24 @@ function parseNumber(raw: string | undefined): number | null {
 
 function normalizeTaxCode(raw: string | null): string | null {
   if (!raw) return null;
-  const lower = raw.toLowerCase().replace(/\s/g, '');
-  if (lower.includes('10%') || lower === 'tax10' || lower === '課税10%') return 'TAX10';
-  if (lower.includes('8%') || lower === 'tax8' || lower === '軽減8%') return 'TAX8';
-  if (lower.includes('非課税') || lower === 'nontax') return 'NONTAX';
-  if (lower.includes('免税') || lower === 'exempt') return 'EXEMPT';
+  const lower = raw.toLowerCase().replace(/[\s\u3000]/g, '');
+
+  // 10% tax patterns
+  if (lower.includes('10%') || lower === 'tax10' || lower.includes('課税10')
+    || lower.includes('課対仕入10') || lower.includes('課税売上10')
+    || lower.includes('課対売上10') || lower.includes('標準税率')) return 'TAX10';
+
+  // 8% reduced rate patterns
+  if (lower.includes('8%') || lower === 'tax8' || lower.includes('軽減8')
+    || lower.includes('軽減税率') || lower.includes('課対仕入8')
+    || lower.includes('課税売上8') || lower.includes('課対売上8')) return 'TAX8';
+
+  // Non-taxable
+  if (lower.includes('非課税') || lower === 'nontax' || lower.includes('対象外')) return 'NONTAX';
+
+  // Exempt (export, etc.)
+  if (lower.includes('免税') || lower === 'exempt' || lower.includes('輸出免税')) return 'EXEMPT';
+
+  // Unrecognized — return as-is
   return raw;
 }

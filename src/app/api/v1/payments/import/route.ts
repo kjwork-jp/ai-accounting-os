@@ -63,45 +63,52 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminSupabase();
+
+  // Pre-fetch existing payments for duplicate detection (batch approach)
+  const dates = [...new Set(parseResult.rows.map(r => r.occurred_on))];
+  const { data: existingPayments } = await admin
+    .from('payments')
+    .select('occurred_on, amount, counterparty_name_raw')
+    .eq('tenant_id', result.auth.tenantId)
+    .in('occurred_on', dates);
+
+  const existingKeys = new Set(
+    (existingPayments ?? []).map(p => `${p.occurred_on}|${p.amount}|${p.counterparty_name_raw}`)
+  );
+
+  // Filter out duplicates
+  const newRows = parseResult.rows.filter(row => {
+    const key = `${row.occurred_on}|${row.amount}|${row.counterparty_name_raw}`;
+    return !existingKeys.has(key);
+  });
+  const skipped = parseResult.rows.length - newRows.length;
+
+  // Batch insert in chunks of 100
   let imported = 0;
-  let skipped = 0;
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < newRows.length; i += BATCH_SIZE) {
+    const batch = newRows.slice(i, i + BATCH_SIZE);
+    const payloads = batch.map(row => ({
+      tenant_id: result.auth.tenantId,
+      payment_type: paymentType,
+      direction: row.direction,
+      occurred_on: row.occurred_on,
+      amount: row.amount,
+      counterparty_name_raw: row.counterparty_name_raw,
+      description: row.description,
+      balance_after: row.balance ?? null,
+      created_by: result.auth.userId,
+    }));
 
-  for (const row of parseResult.rows) {
-    // Duplicate check: same tenant, date, amount, counterparty
-    const { data: existing } = await admin
+    const { error, count } = await admin
       .from('payments')
-      .select('id')
-      .eq('tenant_id', result.auth.tenantId)
-      .eq('occurred_on', row.occurred_on)
-      .eq('amount', row.amount)
-      .eq('counterparty_name_raw', row.counterparty_name_raw)
-      .limit(1);
-
-    if (existing && existing.length > 0) {
-      skipped++;
-      continue;
-    }
-
-    const { error } = await admin
-      .from('payments')
-      .insert({
-        tenant_id: result.auth.tenantId,
-        payment_type: paymentType,
-        direction: row.direction,
-        occurred_on: row.occurred_on,
-        amount: row.amount,
-        counterparty_name_raw: row.counterparty_name_raw,
-        description: row.description,
-        balance_after: row.balance ?? null,
-        created_by: result.auth.userId,
-      });
+      .insert(payloads);
 
     if (error) {
-      console.error('[payments/import] Insert error:', error.message);
-      continue;
+      console.error('[payments/import] Batch insert error:', error.message);
+    } else {
+      imported += count ?? batch.length;
     }
-
-    imported++;
   }
 
   // Audit log

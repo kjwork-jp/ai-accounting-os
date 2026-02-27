@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const queryResult = parseQuery(taxSummaryQuerySchema, request.nextUrl.searchParams);
   if ('error' in queryResult) return queryResult.error;
 
-  const { date_from, date_to } = queryResult.data;
+  const { date_from, date_to, tax_included } = queryResult.data;
   const admin = createAdminSupabase();
 
   // Get confirmed entry IDs for the period
@@ -105,18 +105,23 @@ export async function GET(request: NextRequest) {
     };
 
     // Revenue accounts → sales side; expense/asset accounts → purchase side
+    // Tax calculation: tax_included=true → 内税(税込): tax = amount * rate / (100 + rate)
+    //                  tax_included=false → 外税(税抜): tax = amount * rate / 100
+    const computeTax = (amount: number) => {
+      if (rate <= 0) return 0;
+      return tax_included
+        ? Math.round(amount * rate / (100 + rate))
+        : Math.round(amount * rate / 100);
+    };
+
     if (category === 'revenue') {
-      const amount = line.credit - line.debit; // revenue is credit-side
-      existing.taxable_sales += Math.abs(amount);
-      if (rate > 0) {
-        existing.tax_on_sales += Math.round(Math.abs(amount) * rate / (100 + rate));
-      }
+      const amount = Math.abs(line.credit - line.debit); // revenue is credit-side
+      existing.taxable_sales += amount;
+      existing.tax_on_sales += computeTax(amount);
     } else if (category === 'expense' || category === 'asset') {
-      const amount = line.debit - line.credit; // expense is debit-side
-      existing.taxable_purchases += Math.abs(amount);
-      if (rate > 0) {
-        existing.tax_on_purchases += Math.round(Math.abs(amount) * rate / (100 + rate));
-      }
+      const amount = Math.abs(line.debit - line.credit); // expense is debit-side
+      existing.taxable_purchases += amount;
+      existing.tax_on_purchases += computeTax(amount);
     }
 
     taxMap.set(taxCode, existing);

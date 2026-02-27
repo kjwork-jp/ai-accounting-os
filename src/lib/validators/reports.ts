@@ -15,6 +15,7 @@ export const trialBalanceQuerySchema = z.object({
 export const taxSummaryQuerySchema = z.object({
   date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tax_included: z.coerce.boolean().default(true), // true=内税(税込金額), false=外税(税抜金額)
 });
 
 // GET /journals/export query params

@@ -84,15 +84,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return internalError(`取引先の統合に失敗しました: ${mergeError.message}`);
   }
 
-  // Update journal_lines references
-  const { error: journalError } = await admin
-    .from('journal_lines')
-    .update({ partner_id: targetId })
-    .in('partner_id', merge_from_ids)
-    .eq('tenant_id', result.auth.tenantId);
+  // Cascade partner_id references to all related tables
+  const cascadeTables = [
+    { table: 'journal_lines', column: 'partner_id', hasTenant: true },
+    { table: 'documents', column: 'partner_id', hasTenant: true },
+    { table: 'orders', column: 'partner_id', hasTenant: true },
+    { table: 'invoices', column: 'partner_id', hasTenant: true },
+  ] as const;
 
-  if (journalError) {
-    console.error('[partner-merge] journal_lines update failed:', journalError.message);
+  for (const { table, column, hasTenant } of cascadeTables) {
+    let cascadeQuery = admin
+      .from(table)
+      .update({ [column]: targetId })
+      .in(column, merge_from_ids);
+    if (hasTenant) {
+      cascadeQuery = cascadeQuery.eq('tenant_id', result.auth.tenantId);
+    }
+    const { error: cascadeError } = await cascadeQuery;
+    if (cascadeError) {
+      console.error(`[partner-merge] ${table}.${column} update failed:`, cascadeError.message);
+    }
   }
 
   // Audit log

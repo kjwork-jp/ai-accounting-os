@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 
 interface ReconciliationSuggestion {
+  reconciliation_id: string;
   payment_id: string;
   target_type: string;
   target_id: string;
@@ -66,19 +67,16 @@ export function ReconciliationList() {
   };
 
   const handleConfirm = async (suggestion: ReconciliationSuggestion) => {
-    // We need the reconciliation ID. For now we use a search approach.
-    // The suggest API creates reconciliation records, so we find them.
     setConfirming((prev) => new Set(prev).add(suggestion.payment_id));
     try {
-      // The reconciliation was created during suggest, we need its ID
-      // For simplicity, we'll confirm by searching for the payment_id
-      const searchRes = await fetch(`/api/v1/reconciliations/suggest`, {
+      const res = await fetch(`/api/v1/reconciliations/${suggestion.reconciliation_id}/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date_from: dateFrom, date_to: dateTo }),
       });
-      // Instead, just confirm using the payment_id - we need to find the reconciliation record
-      // This is a simplified approach - in production, the suggest endpoint should return IDs
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error?.message || '確定に失敗しました');
+        return;
+      }
       toast.success('突合を確定しました');
       setSuggestions((prev) => prev.filter((s) => s.payment_id !== suggestion.payment_id));
     } catch {
